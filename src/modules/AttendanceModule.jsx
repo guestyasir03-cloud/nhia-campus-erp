@@ -1,34 +1,50 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, BarChart3, AlertTriangle, CheckCircle, ChevronLeft, Save, Download } from 'lucide-react';
+import {
+  ChevronLeft, Calendar, ClipboardCheck, Edit3, Save,
+  Copy, Download, FileSpreadsheet, CheckCircle2, Users
+} from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
 
-const MONTHS = [
-  'April', 'May', 'June', 'July', 'August', 'September',
-  'October', 'November', 'December', 'January', 'February', 'March'
+const DEFAULT_SESSIONS = [
+  'Friday Register',
+  'Morning Assembly',
+  'Maghrib / Isha Prayer',
+  'Night Study',
+  'Special Program',
+  'Custom...'
 ];
 
 export default function AttendanceModule({ onBack, user }) {
-  const [view, setView] = useState(user?.role === 'student' ? 'student_view' : 'menu');
+  const isAdmin = ['admin', 'coordinator'].includes(user?.role);
+  const [mainTab, setMainTab] = useState('spot'); // 'spot' | 'monthly'
   const [classes, setClasses] = useState([]);
-  const [selectedClass, setSelectedClass] = useState('');
-  const [month, setMonth] = useState('November');
-  const [workingDays, setWorkingDays] = useState('');
-  const [students, setStudents] = useState([]);
-  const [attMap, setAttMap] = useState({});
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
-  // Reports State
-  const [classReport, setClassReport] = useState(null);
-  const [campusStats, setCampusStats] = useState(null);
-  const [pendingList, setPendingList] = useState(null);
-  const [studentAtt, setStudentAtt] = useState(null);
+  // ==========================================
+  // SPOT / SESSION ATTENDANCE STATE
+  // ==========================================
+  const [spotView, setSpotView] = useState('take'); // 'take' | 'history'
+  const [spotDate, setSpotDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [spotSession, setSpotSession] = useState('Friday Register');
+  const [customSession, setCustomSession] = useState('');
+  const [spotClass, setSpotClass] = useState('');
+  const [spotStudents, setSpotStudents] = useState([]);
+  const [spotMap, setSpotMap] = useState({}); // { adm_no: 'P' | 'A' | 'L' }
+  const [historyList, setHistoryList] = useState([]);
+
+  // ==========================================
+  // MONTHLY LEDGER ATTENDANCE STATE
+  // ==========================================
+  const [monthYear, setMonthYear] = useState(() => new Date().toISOString().slice(0, 7)); // YYYY-MM
+  const [monthlyClass, setMonthlyClass] = useState('');
+  const [workingDays, setWorkingDays] = useState('25');
+  const [monthlyStudents, setMonthlyStudents] = useState([]);
+  const [monthlyMap, setMonthlyMap] = useState({}); // { adm_no: present_days }
 
   useEffect(() => {
     loadClasses();
-    if (user?.role === 'student' && user.id) {
-      loadStudentAttendance(user.id);
-    }
   }, []);
 
   async function loadClasses() {
@@ -38,395 +54,566 @@ export default function AttendanceModule({ onBack, user }) {
     }
   }
 
-  // സ്റ്റുഡന്റിന് സ്വന്തം അറ്റൻഡൻസ് കാണാൻ
-  async function loadStudentAttendance(admNo) {
-    setLoading(true);
-    const { data } = await supabase.from('attendance').select('*').eq('adm_no', admNo);
-    const list = data || [];
-    const totalW = list.reduce((a, b) => a + (Number(b.working_days) || 0), 0);
-    const totalP = list.reduce((a, b) => a + (Number(b.attended_days) || 0), 0);
-    const perc = totalW > 0 ? ((totalP / totalW) * 100).toFixed(1) : '0.0';
-    setStudentAtt({ list, totalW, totalP, leaves: totalW - totalP, perc });
-    setLoading(false);
-  }
+  const activeSessionName = spotSession === 'Custom...' ? customSession.trim() : spotSession;
 
-  // 1. പ്രതിമാസ രജിസ്റ്റർ ലോഡ് ചെയ്യുന്നു
-  async function loadRegister() {
-    if (!selectedClass || !month || !workingDays) {
-      return alert('ക്ലാസ്സ്, മാസം, ആകെ പ്രവൃത്തിദിനങ്ങൾ എന്നിവ നൽകുക!');
+  // ==========================================
+  // SPOT ATTENDANCE FUNCTIONS
+  // ==========================================
+  async function loadSpotStudents(clsParam, dateParam, sessParam) {
+    const targetCls = clsParam || spotClass;
+    const targetDate = dateParam || spotDate;
+    const targetSess = sessParam || activeSessionName;
+
+    if (!targetCls || !targetDate || !targetSess) {
+      return alert('Date, Session, Class ellam select cheyyuka!');
     }
-    setLoading(true); setMsg('');
+
+    setLoading(true);
+    setMsg('');
+
     const [{ data: stData }, { data: attData }] = await Promise.all([
-      supabase.from('students').select('adm_no, name').eq('class_name', selectedClass).order('name'),
-      supabase.from('attendance').select('*').eq('class_name', selectedClass).eq('month', month)
+      supabase.from('students').select('adm_no, name').eq('class_name', targetCls).order('adm_no'),
+      supabase.from('spot_attendance')
+        .select('*')
+        .eq('class_name', targetCls)
+        .eq('session_date', targetDate)
+        .eq('session_name', targetSess)
     ]);
 
     const map = {};
-    (attData || []).forEach(a => { map[a.adm_no] = a.attended_days; });
-    setStudents(stData || []);
-    setAttMap(map);
+    (stData || []).forEach(s => { map[s.adm_no] = 'P'; }); // Default Present
+    (attData || []).forEach(a => { map[a.adm_no] = a.status; });
+
+    setSpotStudents(stData || []);
+    setSpotMap(map);
+    setLoading(false);
+
+    if (attData && attData.length > 0) {
+      setMsg(`✏️ Existing attendance loaded (${targetDate} - ${targetSess}). Edit cheythu Save cheyyaam.`);
+    }
+  }
+
+  function markAllSpot(status) {
+    const updated = {};
+    spotStudents.forEach(s => { updated[s.adm_no] = status; });
+    setSpotMap(updated);
+  }
+
+  async function saveSpotAttendance() {
+    if (spotStudents.length === 0) return;
+    setLoading(true);
+    setMsg('');
+
+    const rows = spotStudents.map(s => ({
+      session_date: spotDate,
+      session_name: activeSessionName,
+      class_name: spotClass,
+      adm_no: s.adm_no,
+      status: spotMap[s.adm_no] || 'P',
+      taken_by: user?.name || 'Staff'
+    }));
+
+    const { error } = await supabase
+      .from('spot_attendance')
+      .upsert(rows, { onConflict: 'session_date,session_name,adm_no' });
+
+    setLoading(false);
+    if (error) setMsg('❌ Error: ' + error.message);
+    else setMsg(`✅ ${spotClass} (${activeSessionName}) attendance save aayi!`);
+  }
+
+  async function loadSpotHistory() {
+    setLoading(true);
+    setMsg('');
+    const { data, error } = await supabase
+      .from('spot_attendance')
+      .select('session_date, session_name, class_name, status, taken_by')
+      .order('session_date', { ascending: false })
+      .limit(1000);
+
+    setLoading(false);
+    if (error) return setMsg('❌ Error: ' + error.message);
+
+    // Group by date + session + class
+    const grouped = {};
+    (data || []).forEach(r => {
+      const key = `${r.session_date}__${r.session_name}__${r.class_name}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          date: r.session_date,
+          session: r.session_name,
+          className: r.class_name,
+          takenBy: r.taken_by,
+          P: 0, A: 0, L: 0, total: 0
+        };
+      }
+      grouped[key][r.status] = (grouped[key][r.status] || 0) + 1;
+      grouped[key].total += 1;
+    });
+
+    setHistoryList(Object.values(grouped));
+  }
+
+  function openForEdit(h) {
+    setSpotDate(h.date);
+    if (DEFAULT_SESSIONS.includes(h.session)) {
+      setSpotSession(h.session);
+    } else {
+      setSpotSession('Custom...');
+      setCustomSession(h.session);
+    }
+    setSpotClass(h.className);
+    setSpotView('take');
+    loadSpotStudents(h.className, h.date, h.session);
+  }
+
+  function copyWhatsAppAbsentees() {
+    const absentees = spotStudents.filter(s => spotMap[s.adm_no] === 'A');
+    const leaves = spotStudents.filter(s => spotMap[s.adm_no] === 'L');
+    const presentCount = spotStudents.filter(s => spotMap[s.adm_no] === 'P').length;
+
+    let text = `*NHIA ATTENDANCE REPORT*\n`;
+    text += `📅 Date: ${spotDate}\n`;
+    text += `📌 Session: ${activeSessionName}\n`;
+    text += `🏫 Class: ${spotClass}\n`;
+    text += `✅ Present: ${presentCount} | ❌ Absent: ${absentees.length} | 🟡 Leave: ${leaves.length}\n\n`;
+
+    if (absentees.length > 0) {
+      text += `*❌ ABSENTEES:*\n`;
+      absentees.forEach((s, i) => { text += `${i + 1}. ${s.name} (${s.adm_no})\n`; });
+    } else {
+      text += `✅ *All Students Present!*\n`;
+    }
+
+    if (leaves.length > 0) {
+      text += `\n*🟡 ON LEAVE:*\n`;
+      leaves.forEach((s, i) => { text += `${i + 1}. ${s.name} (${s.adm_no})\n`; });
+    }
+
+    navigator.clipboard.writeText(text);
+    setMsg('📋 WhatsApp Absentees Report copy cheythu!');
+  }
+
+  // ==========================================
+  // MONTHLY HARD-LEDGER FUNCTIONS
+  // ==========================================
+  async function loadMonthlyStudents() {
+    if (!monthlyClass || !monthYear) return alert('Month-um Class-um select cheyyuka!');
+    setLoading(true);
+    setMsg('');
+
+    const [{ data: stData }, { data: mData }] = await Promise.all([
+      supabase.from('students').select('adm_no, name').eq('class_name', monthlyClass).order('adm_no'),
+      supabase.from('monthly_attendance')
+        .select('*')
+        .eq('class_name', monthlyClass)
+        .eq('month_year', monthYear)
+    ]);
+
+    const map = {};
+    if (mData && mData.length > 0) {
+      setWorkingDays(String(mData[0].working_days || 25));
+      mData.forEach(r => { map[r.adm_no] = String(r.present_days ?? ''); });
+    }
+
+    setMonthlyStudents(stData || []);
+    setMonthlyMap(map);
     setLoading(false);
   }
 
-  function updateAtt(admNo, val) {
-    if (val !== '' && Number(val) > Number(workingDays)) {
-      alert(`ആകെ പ്രവൃത്തിദിനങ്ങളേക്കാൾ (${workingDays}) കൂടുതൽ നൽകാൻ കഴിയില്ല!`);
-      return;
-    }
-    setAttMap(prev => ({ ...prev, [admNo]: val }));
-  }
+  async function saveMonthlyLedger() {
+    const wd = Number(workingDays);
+    if (!wd || wd <= 0) return alert('Total Working Days krithyamaayi nalkuka!');
+    setLoading(true);
+    setMsg('');
 
-  async function saveAttendance() {
-    setLoading(true); setMsg('');
     const rows = [];
-    students.forEach(s => {
-      const val = attMap[s.adm_no];
-      if (val !== undefined && val !== '') {
-        rows.push({
-          adm_no: s.adm_no,
-          class_name: selectedClass,
-          month,
-          working_days: Number(workingDays),
-          attended_days: Number(val),
-          teacher_email: user?.name || 'Admin',
-          academic_year: '2026-27'
-        });
-      }
+    monthlyStudents.forEach(s => {
+      const val = monthlyMap[s.adm_no];
+      if (val === undefined || val === '') return;
+      rows.push({
+        adm_no: s.adm_no,
+        class_name: monthlyClass,
+        month_year: monthYear,
+        working_days: wd,
+        present_days: Number(val),
+        entered_by: user?.name || 'Class Teacher'
+      });
     });
 
     if (rows.length === 0) {
       setLoading(false);
-      return setMsg('⚠️ സേവ് ചെയ്യാൻ ഡാറ്റയൊന്നും നൽകിയിട്ടില്ല.');
+      return setMsg('⚠️ Save cheyyaan present days onnum nalkiyittilla.');
     }
 
-    const { error } = await supabase.from('attendance').upsert(rows, { onConflict: 'adm_no,month,academic_year' });
+    const { error } = await supabase
+      .from('monthly_attendance')
+      .upsert(rows, { onConflict: 'adm_no,month_year' });
+
     setLoading(false);
     if (error) setMsg('❌ Error: ' + error.message);
-    else setMsg(`✅ ${rows.length} കുട്ടികളുടെ ${month} മാസത്തെ അറ്റൻഡൻസ് സേവ് ചെയ്തു!`);
+    else setMsg(`✅ ${rows.length} kuttikalude ${monthYear} monthly attendance save aayi!`);
   }
 
-  // 2. ക്ലാസ്സ് റിപ്പോർട്ട്
-  async function generateClassReport() {
-    if (!selectedClass) return alert('ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക!');
-    setLoading(true);
-    const [{ data: stData }, { data: attData }] = await Promise.all([
-      supabase.from('students').select('adm_no, name').eq('class_name', selectedClass).order('name'),
-      supabase.from('attendance').select('*').eq('class_name', selectedClass)
-    ]);
-
-    const wMap = {};
-    (attData || []).forEach(a => { if (!wMap[a.month]) wMap[a.month] = Number(a.working_days) || 0; });
-    const activeMonths = MONTHS.filter(m => wMap[m] > 0);
-
-    const rows = (stData || []).map(s => {
-      const mine = (attData || []).filter(a => a.adm_no === s.adm_no);
-      const mData = {};
-      let totalW = 0, totalP = 0;
-      mine.forEach(a => {
-        mData[a.month] = Number(a.attended_days) || 0;
-        totalW += Number(a.working_days) || 0;
-        totalP += Number(a.attended_days) || 0;
-      });
-      const leaves = totalW - totalP;
-      const perc = totalW > 0 ? ((totalP / totalW) * 100).toFixed(1) : '0.0';
-      return { adm_no: s.adm_no, name: s.name, mData, totalW, totalP, leaves, perc };
-    });
-
-    setClassReport({ className: selectedClass, activeMonths, wMap, rows });
-    setLoading(false);
-  }
-
-  function downloadCSV() {
-    if (!classReport) return;
-    const headers = ['Adm No', 'Name', ...classReport.activeMonths, 'Total W.Days', 'Total Present', 'Leaves', 'Att %'];
-    const csvRows = [headers.join(',')];
-    classReport.rows.forEach(r => {
-      const cols = [
-        r.adm_no, `"${r.name}"`,
-        ...classReport.activeMonths.map(m => r.mData[m] ?? '-'),
-        r.totalW, r.totalP, r.leaves, `${r.perc}%`
-      ];
-      csvRows.push(cols.join(','));
-    });
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  // ==========================================
+  // EXPORT HELPERS
+  // ==========================================
+  function downloadCSV(filename, headers, rows) {
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `NHIA_${classReport.className}_Attendance.csv`;
+    a.href = url;
+    a.download = filename;
     a.click();
+    URL.revokeObjectURL(url);
   }
 
-  // 3. ക്യാമ്പസ് അനാലിസിസ് (Critical Leaves > 7.5 Days)
-  async function loadCampusAnalysis() {
-    setLoading(true);
-    const [{ data: stData }, { data: attData }] = await Promise.all([
-      supabase.from('students').select('adm_no, name, class_name'),
-      supabase.from('attendance').select('*')
-    ]);
-
-    const stMap = {};
-    (stData || []).forEach(s => { stMap[s.adm_no] = { ...s, totalW: 0, totalP: 0 }; });
-    (attData || []).forEach(a => {
-      if (stMap[a.adm_no]) {
-        stMap[a.adm_no].totalW += Number(a.working_days) || 0;
-        stMap[a.adm_no].totalP += Number(a.attended_days) || 0;
-      }
-    });
-
-    const list = Object.values(stMap).filter(s => s.totalW > 0).map(s => ({
-      ...s,
-      leaves: s.totalW - s.totalP,
-      perc: (s.totalP / s.totalW) * 100
-    }));
-
-    const critical = list.filter(s => s.leaves > 7.5).sort((a, b) => b.leaves - a.leaves);
-    const best = [...list].sort((a, b) => b.perc - a.perc).slice(0, 10);
-
-    setCampusStats({ critical, best });
-    setLoading(false);
+  function downloadPDF(elId, filename) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    html2pdf().set({
+      margin: 8, filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(el).save();
   }
 
-  // 4. പെൻഡിങ് അലർട്ട്
-  async function checkPending() {
-    setLoading(true);
-    const { data: attData } = await supabase.from('attendance').select('class_name').eq('month', month);
-    const entered = new Set((attData || []).map(a => a.class_name));
-    const pending = classes.filter(c => !entered.has(c));
-    setPendingList({ month, pending });
-    setLoading(false);
-  }
-
-  const Header = ({ title, backAction }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-      <button onClick={backAction} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-        <ChevronLeft size={20} />
-      </button>
-      <h2 style={{ fontSize: 20, fontWeight: 800 }}>{title}</h2>
-    </div>
-  );
-
-  if (view === 'student_view') {
-    return (
-      <div>
-        <Header title="My Attendance" backAction={onBack} />
-        {loading || !studentAtt ? <p style={{ textAlign: 'center', color: '#64748b' }}>ലോഡ് ചെയ്യുന്നു...</p> : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: '#2e44d2' }}>{studentAtt.perc}%</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>Attendance</div>
-              </div>
-              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: '#16a34a' }}>{studentAtt.totalP}/{studentAtt.totalW}</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>Present</div>
-              </div>
-              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                <div style={{ fontSize: 20, fontWeight: 800, color: '#dc2626' }}>{studentAtt.leaves}</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>Leaves</div>
-              </div>
-            </div>
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
-              {studentAtt.list.length === 0 ? <p style={{ fontSize: 13, color: '#94a3b8' }}>അറ്റൻഡൻസ് വിവരങ്ങൾ ഇതുവരെ ചേർത്തിട്ടില്ല.</p> : studentAtt.list.map(a => (
-                <div key={a.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9', fontSize: 14 }}>
-                  <b>{a.month}</b>
-                  <span>{a.attended_days} / {a.working_days} Days</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (view === 'menu') {
-    return (
-      <div>
-        <Header title="Attendance" backAction={onBack} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {[
-            { id: 'register', label: 'Monthly register', icon: Calendar },
-            { id: 'report', label: 'Class-wise attendance', icon: BarChart3 },
-            { id: 'analysis', label: 'Campus analysis (Critical leaves)', icon: CheckCircle },
-            { id: 'pending', label: 'Pending alerts', icon: AlertTriangle }
-          ].map(item => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => { setView(item.id); setMsg(''); if (item.id === 'analysis') loadCampusAnalysis(); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0', cursor: 'pointer', textAlign: 'left', width: '100%' }}
-              >
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center' }}>
-                  <Icon size={18} />
-                </div>
-                <span style={{ fontWeight: 600, fontSize: 14, color: '#1e293b' }}>{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
+  // Spot Live Counts
+  const pCount = spotStudents.filter(s => spotMap[s.adm_no] === 'P').length;
+  const aCount = spotStudents.filter(s => spotMap[s.adm_no] === 'A').length;
+  const lCount = spotStudents.filter(s => spotMap[s.adm_no] === 'L').length;
 
   return (
     <div>
-      <Header
-        title={view === 'register' ? 'Monthly Register' : view === 'report' ? 'Class Attendance' : view === 'analysis' ? 'Campus Analysis' : 'Pending Alerts'}
-        backAction={() => setView('menu')}
-      />
+      {/* HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+          <ChevronLeft size={20} />
+        </button>
+        <h2 style={{ fontSize: 20, fontWeight: 800 }}>Attendance Portal</h2>
+      </div>
 
-      {msg && <div style={{ background: '#eff6ff', color: '#1e40af', padding: 12, borderRadius: 10, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{msg}</div>}
+      {/* MAIN MODE SWITCHER (2 TYPES OF ATTENDANCE) */}
+      <div style={{ display: 'flex', background: '#e2e8f0', padding: 4, borderRadius: 14, marginBottom: 14, gap: 4 }}>
+        <button
+          onClick={() => { setMainTab('spot'); setMsg(''); }}
+          style={{
+            flex: 1, padding: '10px 6px', borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+            background: mainTab === 'spot' ? '#fff' : 'transparent',
+            color: mainTab === 'spot' ? '#2e44d2' : '#475569',
+            boxShadow: mainTab === 'spot' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+          }}
+        >
+          ⚡ Spot / Register (All Staff)
+        </button>
+        <button
+          onClick={() => { setMainTab('monthly'); setMsg(''); }}
+          style={{
+            flex: 1, padding: '10px 6px', borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+            background: mainTab === 'monthly' ? '#fff' : 'transparent',
+            color: mainTab === 'monthly' ? '#2e44d2' : '#475569',
+            boxShadow: mainTab === 'monthly' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+          }}
+        >
+          📒 Monthly Ledger (Class Tr)
+        </button>
+      </div>
 
-      {/* 1. MONTHLY REGISTER */}
-      {view === 'register' && (
+      {msg && (
+        <div style={{ background: '#eff6ff', color: '#1e40af', padding: 11, borderRadius: 10, fontSize: 12, fontWeight: 600, marginBottom: 12 }}>
+          {msg}
+        </div>
+      )}
+
+      {/* ================================================= */}
+      {/* TYPE 1: SPOT / SESSION ATTENDANCE (ALL TEACHERS)  */}
+      {/* ================================================= */}
+      {mainTab === 'spot' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1' }}>
-              <option value="">-- ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <select value={month} onChange={e => setMonth(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1' }}>
-                {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-              <input type="number" placeholder="Working Days" value={workingDays} onChange={e => setWorkingDays(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1' }} />
-            </div>
-            <button onClick={loadRegister} style={{ padding: 12, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-              Open Register
+          {/* Take vs Edit/History Buttons */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={() => setSpotView('take')}
+              style={{ flex: 1, padding: 11, borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: spotView === 'take' ? '#16a34a' : '#f1f5f9', color: spotView === 'take' ? '#fff' : '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            >
+              <ClipboardCheck size={15} /> Take Attendance
+            </button>
+            <button
+              onClick={() => { setSpotView('history'); loadSpotHistory(); }}
+              style={{ flex: 1, padding: 11, borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: spotView === 'history' ? '#0284c7' : '#f1f5f9', color: spotView === 'history' ? '#fff' : '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            >
+              <Edit3 size={15} /> Edit / History
             </button>
           </div>
 
-          {students.length > 0 && (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-                <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                  <tr>
-                    <th style={{ padding: 10, textAlign: 'left' }}>Student</th>
-                    <th style={{ padding: 10, textAlign: 'center' }}>Attended (Max {workingDays})</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {students.map(s => (
-                    <tr key={s.adm_no} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: 10, fontWeight: 600 }}>
-                        {s.name}<div style={{ fontSize: 11, color: '#64748b' }}>{s.adm_no}</div>
-                      </td>
-                      <td style={{ padding: 8, textAlign: 'center' }}>
-                        <input
-                          type="number"
-                          step="0.5"
-                          value={attMap[s.adm_no] ?? ''}
-                          onChange={e => updateAtt(s.adm_no, e.target.value)}
-                          placeholder="Days"
-                          style={{ width: 75, padding: 7, textAlign: 'center', borderRadius: 8, border: '1px solid #cbd5e1' }}
-                        />
-                      </td>
-                    </tr>
+          {spotView === 'take' ? (
+            <>
+              {/* Filter Card */}
+              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Date</label>
+                    <input type="date" value={spotDate} onChange={e => setSpotDate(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Class</label>
+                    <select value={spotClass} onChange={e => setSpotClass(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4, background: '#fff' }}>
+                      <option value="">-- Select --</option>
+                      {classes.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Session / Register Type</label>
+                  <select value={spotSession} onChange={e => setSpotSession(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4, background: '#fff' }}>
+                    {DEFAULT_SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                {spotSession === 'Custom...' && (
+                  <input
+                    value={customSession}
+                    onChange={e => setCustomSession(e.target.value)}
+                    placeholder="Session peru nalkuka (e.g., Sports, Special Class)"
+                    style={{ padding: 10, borderRadius: 10, border: '1px solid #93c5fd', fontSize: 13 }}
+                  />
+                )}
+
+                <button onClick={() => loadSpotStudents()} disabled={loading} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  {loading ? 'Loading...' : 'Load Students'}
+                </button>
+              </div>
+
+              {/* Student Marking List */}
+              {spotStudents.length > 0 && (
+                <>
+                  {/* Live Summary + Quick Actions */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: 12, border: '1px solid #e2e8f0', flexWrap: 'wrap', gap: 8 }}>
+                    <div style={{ display: 'flex', gap: 10, fontSize: 12, fontWeight: 800 }}>
+                      <span style={{ color: '#16a34a' }}>P: {pCount}</span>
+                      <span style={{ color: '#dc2626' }}>A: {aCount}</span>
+                      <span style={{ color: '#d97706' }}>L: {lCount}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button onClick={() => markAllSpot('P')} style={{ padding: '5px 9px', borderRadius: 8, border: 'none', background: '#dcfce7', color: '#15803d', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>All P</button>
+                      <button onClick={() => markAllSpot('A')} style={{ padding: '5px 9px', borderRadius: 8, border: 'none', background: '#fee2e2', color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>All A</button>
+                    </div>
+                  </div>
+
+                  <div id="nhia-spot-sheet" style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                    <div style={{ padding: '10px 14px', background: '#eef2ff', fontSize: 12, fontWeight: 800, color: '#2e44d2', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>{spotClass} — {activeSessionName}</span>
+                      <span>{spotDate}</span>
+                    </div>
+                    {spotStudents.map((s, idx) => {
+                      const st = spotMap[s.adm_no] || 'P';
+                      return (
+                        <div key={s.adm_no} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', borderBottom: '1px solid #f1f5f9' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{idx + 1}. {s.name}</div>
+                            <div style={{ fontSize: 10, color: '#64748b' }}>Adm: {s.adm_no}</div>
+                          </div>
+                          <div style={{ display: 'flex', gap: 5 }}>
+                            {[
+                              { k: 'P', bg: '#16a34a', light: '#dcfce7', txt: '#15803d' },
+                              { k: 'A', bg: '#dc2626', light: '#fee2e2', txt: '#dc2626' },
+                              { k: 'L', bg: '#d97706', light: '#fef3c7', txt: '#b45309' }
+                            ].map(b => (
+                              <button
+                                key={b.k}
+                                onClick={() => setSpotMap(prev => ({ ...prev, [s.adm_no]: b.k }))}
+                                style={{
+                                  width: 34, height: 32, borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 12, cursor: 'pointer',
+                                  background: st === b.k ? b.bg : b.light,
+                                  color: st === b.k ? '#fff' : b.txt
+                                }}
+                              >
+                                {b.k}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Save & Action Buttons */}
+                  <button onClick={saveSpotAttendance} disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <Save size={16} /> {loading ? 'Saving...' : 'SAVE ATTENDANCE'}
+                  </button>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                    <button onClick={copyWhatsAppAbsentees} style={{ padding: 10, borderRadius: 10, border: 'none', background: '#25d366', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                      <Copy size={13} /> WhatsApp
+                    </button>
+                    <button onClick={() => downloadPDF('nhia-spot-sheet', `${spotClass}_${activeSessionName}_${spotDate}.pdf`)} style={{ padding: 10, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                      <Download size={13} /> PDF
+                    </button>
+                    <button
+                      onClick={() => downloadCSV(
+                        `${spotClass}_${activeSessionName}_${spotDate}.csv`,
+                        ['Adm No', 'Student Name', 'Status', 'Date', 'Session'],
+                        spotStudents.map(s => [s.adm_no, s.name, spotMap[s.adm_no] || 'P', spotDate, activeSessionName])
+                      )}
+                      style={{ padding: 10, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                    >
+                      <FileSpreadsheet size={13} /> Excel
+                    </button>
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
+            /* HISTORY & EDIT LIST */
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
+              <h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>Recent Attendance Sessions</h4>
+              {historyList.length === 0 ? (
+                <p style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 16 }}>Attendance records onnumilla.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {historyList.map((h, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{h.className} — {h.session}</div>
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                          📅 {h.date} • By: {h.takenBy}
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, display: 'flex', gap: 8 }}>
+                          <span style={{ color: '#16a34a' }}>P: {h.P}</span>
+                          <span style={{ color: '#dc2626' }}>A: {h.A}</span>
+                          <span style={{ color: '#d97706' }}>L: {h.L}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => openForEdit(h)}
+                        style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: '#0284c7', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                      >
+                        Edit
+                      </button>
+                    </div>
                   ))}
-                </tbody>
-              </table>
-              <button onClick={saveAttendance} disabled={loading} style={{ width: '100%', padding: 14, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                <Save size={16} /> {loading ? 'Saving...' : 'Submit Attendance'}
-              </button>
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
 
-      {/* 2. CLASS-WISE REPORT */}
-      {view === 'report' && (
+      {/* ================================================= */}
+      {/* TYPE 2: MONTHLY HARD-LEDGER ENTRY (CLASS TEACHER) */}
+      {/* ================================================= */}
+      {mainTab === 'monthly' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}>
-              <option value="">-- ക്ലാസ്സ് --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button onClick={generateClassReport} style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-              Generate
+          <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 12, color: '#475569', background: '#f8fafc', padding: 8, borderRadius: 8 }}>
+              📒 <b>Hard Ledger Monthly Entry:</b> Class teacher oro maasavum total working days-um present days-um enter cheyyaan.
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Month</label>
+                <input type="month" value={monthYear} onChange={e => setMonthYear(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Class</label>
+                <select value={monthlyClass} onChange={e => setMonthlyClass(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4, background: '#fff' }}>
+                  <option value="">-- Select --</option>
+                  {classes.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+            <button onClick={loadMonthlyStudents} disabled={loading} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+              {loading ? 'Loading...' : 'Load Class Register'}
             </button>
           </div>
 
-          {classReport && (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 12 }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  <thead style={{ background: '#1e293b', color: '#fff' }}>
+          {monthlyStudents.length > 0 && (
+            <>
+              <div style={{ background: '#fff', padding: 12, borderRadius: 12, border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Total Working Days ({monthYear}):</span>
+                <input
+                  type="number"
+                  value={workingDays}
+                  onChange={e => setWorkingDays(e.target.value)}
+                  style={{ width: 70, padding: 8, textAlign: 'center', borderRadius: 8, border: '2px solid #2e44d2', fontWeight: 800, fontSize: 14 }}
+                />
+              </div>
+
+              <div id="nhia-monthly-sheet" style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                <div style={{ padding: '10px 14px', background: '#1e293b', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Monthly Ledger — {monthlyClass} ({monthYear})</span>
+                  <span>Working Days: {workingDays}</span>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
-                      <th style={{ padding: 8, textAlign: 'left' }}>Name</th>
-                      {classReport.activeMonths.map(m => <th key={m} style={{ padding: 8 }}>{m.slice(0, 3)} ({classReport.wMap[m]})</th>)}
-                      <th style={{ padding: 8 }}>Present</th>
-                      <th style={{ padding: 8 }}>Leaves</th>
-                      <th style={{ padding: 8 }}>%</th>
+                      <th style={{ padding: 9, textAlign: 'left' }}>Student</th>
+                      <th style={{ padding: 9, textAlign: 'center' }}>Present Days</th>
+                      <th style={{ padding: 9, textAlign: 'center' }}>%</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {classReport.rows.map(r => (
-                      <tr key={r.adm_no} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: 8, textAlign: 'left', fontWeight: 600 }}>{r.name}</td>
-                        {classReport.activeMonths.map(m => <td key={m} style={{ padding: 8 }}>{r.mData[m] ?? '-'}</td>)}
-                        <td style={{ padding: 8, fontWeight: 700 }}>{r.totalP}/{r.totalW}</td>
-                        <td style={{ padding: 8, fontWeight: 700, color: r.leaves > 7.5 ? '#dc2626' : '#0f172a' }}>{r.leaves}</td>
-                        <td style={{ padding: 8, fontWeight: 700, color: '#2e44d2' }}>{r.perc}%</td>
-                      </tr>
-                    ))}
+                    {monthlyStudents.map(s => {
+                      const val = monthlyMap[s.adm_no] ?? '';
+                      const wd = Number(workingDays) || 0;
+                      const perc = val !== '' && wd > 0 ? ((Number(val) / wd) * 100).toFixed(1) : '-';
+                      const isLow = perc !== '-' && Number(perc) < 75;
+                      return (
+                        <tr key={s.adm_no} style={{ borderBottom: '1px solid #f1f5f9', background: isLow ? '#fef2f2' : '#fff' }}>
+                          <td style={{ padding: 9, fontWeight: 600 }}>
+                            {s.name}<div style={{ fontSize: 10, color: '#64748b' }}>{s.adm_no}</div>
+                          </td>
+                          <td style={{ padding: 6, textAlign: 'center' }}>
+                            <input
+                              type="number"
+                              step="0.5"
+                              value={val}
+                              onChange={e => {
+                                if (e.target.value !== '' && Number(e.target.value) > wd) {
+                                  return alert(`Working days (${wd})-il kooduthal nalkaan kazhiyilla!`);
+                                }
+                                setMonthlyMap(prev => ({ ...prev, [s.adm_no]: e.target.value }));
+                              }}
+                              style={{ width: 65, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1', fontWeight: 700 }}
+                            />
+                          </td>
+                          <td style={{ padding: 9, textAlign: 'center', fontWeight: 800, color: isLow ? '#dc2626' : '#16a34a' }}>
+                            {perc === '-' ? '-' : `${perc}%`}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-              <button onClick={downloadCSV} style={{ width: '100%', marginTop: 12, padding: 11, borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <Download size={16} /> Download Excel (CSV)
+
+              <button onClick={saveMonthlyLedger} disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <Save size={16} /> {loading ? 'Saving...' : 'SAVE MONTHLY LEDGER'}
               </button>
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* 3. CAMPUS ANALYSIS */}
-      {view === 'analysis' && campusStats && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #fecaca' }}>
-            <h4 style={{ color: '#dc2626', marginBottom: 10 }}>🚨 Critical Leaves (&gt; 7.5 Days)</h4>
-            {campusStats.critical.length === 0 ? <p style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>ആരും പരിധി കടന്നിട്ടില്ല!</p> : campusStats.critical.map(s => (
-              <div key={s.adm_no} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #fee2e2', fontSize: 13 }}>
-                <span><b>{s.name}</b> ({s.class_name})</span>
-                <b style={{ color: '#dc2626' }}>{s.leaves} Days</b>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <button onClick={() => downloadPDF('nhia-monthly-sheet', `Monthly_Attendance_${monthlyClass}_${monthYear}.pdf`)} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  <Download size={14} /> Download PDF
+                </button>
+                <button
+                  onClick={() => downloadCSV(
+                    `Monthly_Attendance_${monthlyClass}_${monthYear}.csv`,
+                    ['Adm No', 'Student Name', 'Working Days', 'Present Days', 'Percentage'],
+                    monthlyStudents.map(s => {
+                      const v = monthlyMap[s.adm_no] ?? '';
+                      const wd = Number(workingDays) || 0;
+                      const p = v !== '' && wd > 0 ? `${((Number(v) / wd) * 100).toFixed(1)}%` : '-';
+                      return [s.adm_no, s.name, wd, v, p];
+                    })
+                  )}
+                  style={{ padding: 11, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                >
+                  <FileSpreadsheet size={14} /> Download Excel
+                </button>
               </div>
-            ))}
-          </div>
-
-          <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #bbf7d0' }}>
-            <h4 style={{ color: '#16a34a', marginBottom: 10 }}>🌟 Top Attendance</h4>
-            {campusStats.best.map(s => (
-              <div key={s.adm_no} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f0fdf4', fontSize: 13 }}>
-                <span><b>{s.name}</b> ({s.class_name})</span>
-                <b style={{ color: '#16a34a' }}>{s.perc.toFixed(1)}%</b>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 4. PENDING ALERTS */}
-      {view === 'pending' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select value={month} onChange={e => setMonth(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}>
-              {MONTHS.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-            <button onClick={checkPending} style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-              Scan
-            </button>
-          </div>
-          {pendingList && (
-            <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
-              <h4 style={{ marginBottom: 10 }}>Pending for {pendingList.month}</h4>
-              {pendingList.pending.length === 0 ? (
-                <p style={{ color: '#16a34a', fontWeight: 600, fontSize: 13 }}>✅ എല്ലാ ക്ലാസ്സുകളും അറ്റൻഡൻസ് നൽകിയിട്ടുണ്ട്!</p>
-              ) : pendingList.pending.map(c => (
-                <div key={c} style={{ padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontSize: 14, color: '#dc2626', fontWeight: 600 }}>
-                  ⚠️ {c} — Not Submitted
-                </div>
-              ))}
-            </div>
+            </>
           )}
         </div>
       )}
