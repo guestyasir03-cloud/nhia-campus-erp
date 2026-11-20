@@ -36,7 +36,7 @@ export default function StaffAppraisalModule({ onBack, user }) {
   }, []);
 
   async function loadStaff() {
-    const { data } = await supabase.from('profiles').select('full_name');
+    const { data } = await supabase.from('staff').select('name');
     if (data && data.length > 0) {
       setStaffList(data.map(d => d.full_name).filter(Boolean));
     }
