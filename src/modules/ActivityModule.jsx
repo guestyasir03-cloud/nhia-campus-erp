@@ -1,189 +1,343 @@
 import React, { useState, useEffect } from 'react';
-import { Star, PlusCircle, ListChecks, Trophy, ChevronLeft, Trash2, CheckSquare, Square } from 'lucide-react';
+import {
+  ChevronLeft, PlusCircle, Award, ListChecks, Save,
+  Download, Image as ImageIcon, FileSpreadsheet, Trash2, CheckSquare, Square
+} from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
 
+const CATEGORIES = ['Ibadah', 'Academic', 'Discipline', 'Leadership'];
+
+function getStanding(net) {
+  if (net >= 50) return { label: 'Mumtaz', bg: '#dcfce7', color: '#15803d' };
+  if (net >= 15) return { label: 'Commendable', bg: '#dbeafe', color: '#1d4ed8' };
+  if (net >= 0) return { label: 'Good Standing', bg: '#f1f5f9', color: '#475569' };
+  if (net >= -19) return { label: 'Warning', bg: '#fef3c7', color: '#b45309' };
+  return { label: 'Action Required', bg: '#fee2e2', color: '#dc2626' };
+}
+
 export default function ActivityModule({ onBack, user }) {
-  const [view, setView] = useState(user?.role === 'student' ? 'student_view' : 'menu');
+  const isStudent = user?.role === 'student';
+  const isAdmin = ['admin', 'coordinator'].includes(user?.role);
+
+  const [tab, setTab] = useState('entry'); // entry | report | reasons
   const [classes, setClasses] = useState([]);
-  const [selectedClass, setSelectedClass] = useState('');
-  const [students, setStudents] = useState([]);
   const [reasons, setReasons] = useState([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
   // Entry State
-  const [selectedStudents, setSelectedStudents] = useState([]);
-  const [reasonId, setReasonId] = useState('');
-  const [customReason, setCustomReason] = useState('');
-  const [points, setPoints] = useState('');
-  const [pointType, setPointType] = useState('positive'); // positive | negative
+  const [selectedClass, setSelectedClass] = useState('');
+  const [students, setStudents] = useState([]);
+  const [selectedAdms, setSelectedAdms] = useState(new Set());
+  const [selectedReasonId, setSelectedReasonId] = useState('');
+  const [customPoints, setCustomPoints] = useState('');
+  const [remarks, setRemarks] = useState('');
 
-  // Manage Reasons State
-  const [newReasonTitle, setNewReasonTitle] = useState('');
-  const [newReasonPts, setNewReasonPts] = useState('');
+  // Report State
+  const [reportClass, setReportClass] = useState('');
+  const [reportRows, setReportRows] = useState([]);
+  const [recentLogs, setRecentLogs] = useState([]);
 
-  // Ranking & Student View State
-  const [ranking, setRanking] = useState(null);
-  const [studentLogs, setStudentLogs] = useState(null);
+  // Reasons Manager State
+  const [newTitle, setNewTitle] = useState('');
+  const [newCategory, setNewCategory] = useState('Discipline');
+  const [newType, setNewType] = useState('merit'); // merit | demerit
+  const [newPoints, setNewPoints] = useState('5');
+
+  // Student Self-View State
+  const [mySummary, setMySummary] = useState(null);
 
   useEffect(() => {
-    loadClasses();
-    loadReasons();
-    if (user?.role === 'student' && user.id) {
-      loadStudentPoints(user.id);
+    if (isStudent && user?.id) {
+      loadStudentSelfView(user.id);
+    } else {
+      loadInitial();
     }
   }, []);
 
-  async function loadClasses() {
-    const { data } = await supabase.from('students').select('class_name');
-    if (data) setClasses([...new Set(data.map(d => d.class_name).filter(Boolean))].sort());
+  async function loadInitial() {
+    const [{ data: st }, { data: rsn }] = await Promise.all([
+      supabase.from('students').select('class_name'),
+      supabase.from('activity_reasons').select('*').order('points', { ascending: false })
+    ]);
+    if (st) {
+      setClasses([...new Set(st.map(d => d.class_name).filter(Boolean))].filter(c => c !== 'ALUMNI').sort());
+    }
+    if (rsn) setReasons(rsn);
   }
 
-  async function loadReasons() {
-    const { data } = await supabase.from('activity_reasons').select('*').order('title');
-    setReasons(data || []);
-  }
-
-  async function loadStudentsForClass(cls) {
-    setSelectedClass(cls);
-    setSelectedStudents([]);
-    if (!cls) { setStudents([]); return; }
-    const { data } = await supabase.from('students').select('adm_no, name').eq('class_name', cls).order('name');
-    setStudents(data || []);
-  }
-
-  // സ്റ്റുഡന്റിന് സ്വന്തം പോയിന്റുകൾ കാണാൻ
-  async function loadStudentPoints(admNo) {
+  async function loadStudentSelfView(admNo) {
     setLoading(true);
     const { data } = await supabase
       .from('activity_points')
       .select('*')
       .eq('adm_no', admNo)
-      .order('created_at', { ascending: false });
-    const list = data || [];
-    const total = list.reduce((sum, item) => sum + (Number(item.points) || 0), 0);
-    setStudentLogs({ list, total });
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    const logs = data || [];
+    const merit = logs.filter(l => l.points > 0).reduce((s, l) => s + l.points, 0);
+    const demerit = logs.filter(l => l.points < 0).reduce((s, l) => s + l.points, 0);
+    setMySummary({ merit, demerit, net: merit + demerit, logs });
+    setLoading(false);
+  }
+
+  async function loadClassStudents(cls) {
+    setSelectedClass(cls);
+    setSelectedAdms(new Set());
+    setMsg('');
+    if (!cls) {
+      setStudents([]);
+      return;
+    }
+    setLoading(true);
+    const { data } = await supabase
+      .from('students')
+      .select('adm_no, name, roll_no')
+      .eq('class_name', cls)
+      .order('roll_no', { ascending: true, nullsFirst: false })
+      .order('name');
+    setStudents(data || []);
     setLoading(false);
   }
 
   function handleReasonSelect(id) {
-    setReasonId(id);
+    setSelectedReasonId(id);
     const found = reasons.find(r => String(r.id) === String(id));
-    if (found) {
-      setCustomReason(found.title);
-      setPoints(Math.abs(found.default_points));
-      setPointType(found.default_points >= 0 ? 'positive' : 'negative');
-    }
+    if (found) setCustomPoints(String(found.points));
+    else setCustomPoints('');
   }
 
   function toggleStudent(admNo) {
-    setSelectedStudents(prev =>
-      prev.includes(admNo) ? prev.filter(id => id !== admNo) : [...prev, admNo]
-    );
+    setSelectedAdms(prev => {
+      const next = new Set(prev);
+      if (next.has(admNo)) next.delete(admNo);
+      else next.add(admNo);
+      return next;
+    });
   }
 
-  function toggleAllStudents() {
-    if (selectedStudents.length === students.length) setSelectedStudents([]);
-    else setSelectedStudents(students.map(s => s.adm_no));
-  }
+  // Single Batch Insert (Zero Lag)
+  async function submitPoints() {
+    const rsn = reasons.find(r => String(r.id) === String(selectedReasonId));
+    if (!selectedClass || !rsn || selectedAdms.size === 0) {
+      return alert('Select class, reason, and at least one student.');
+    }
+    const pts = Number(customPoints);
+    if (!pts) return alert('Enter valid points.');
 
-  // 1. പോയിന്റ് സേവ് ചെയ്യാൻ (Single / Bulk)
-  async function savePoints(e) {
-    e.preventDefault();
-    if (selectedStudents.length === 0) return alert('കുറഞ്ഞത് ഒരു കുട്ടിയെയെങ്കിലും തിരഞ്ഞെടുക്കുക!');
-    if (!customReason.trim() || !points) return alert('കാരണവും പോയിന്റും നൽകുക!');
+    setLoading(true);
+    setMsg('');
 
-    setLoading(true); setMsg('');
-    const finalPts = pointType === 'positive' ? Math.abs(Number(points)) : -Math.abs(Number(points));
-    const rows = selectedStudents.map(admNo => ({
+    const rows = Array.from(selectedAdms).map(admNo => ({
       adm_no: admNo,
       class_name: selectedClass,
-      reason: customReason.trim(),
-      points: finalPts,
-      awarded_by: user?.name || 'Admin',
+      category: rsn.category,
+      reason: rsn.title,
+      points: pts,
+      remarks: remarks.trim() || null,
+      recorded_by: user?.name || 'Staff',
       academic_year: '2026-27'
     }));
 
     const { error } = await supabase.from('activity_points').insert(rows);
     setLoading(false);
-    if (error) setMsg('❌ Error: ' + error.message);
-    else {
-      setMsg(`✅ ${rows.length} കുട്ടികൾക്ക് ${finalPts > 0 ? '+' : ''}${finalPts} പോയിന്റ് നൽകി!`);
-      setSelectedStudents([]);
+    if (error) {
+      setMsg('Error: ' + error.message);
+    } else {
+      setMsg(`${pts > 0 ? '+' : ''}${pts} points recorded for ${rows.length} student(s).`);
+      setSelectedAdms(new Set());
+      setRemarks('');
     }
   }
 
-  // 2. പുതിയ Reason ചേർക്കാൻ
+  // Load Class Ranking & Discipline Report
+  async function loadClassReport(cls) {
+    setReportClass(cls);
+    setMsg('');
+    if (!cls) {
+      setReportRows([]);
+      setRecentLogs([]);
+      return;
+    }
+    setLoading(true);
+
+    const [{ data: stData }, { data: ptData }] = await Promise.all([
+      supabase
+        .from('students')
+        .select('adm_no, name, roll_no')
+        .eq('class_name', cls)
+        .order('roll_no', { ascending: true, nullsFirst: false })
+        .order('name'),
+      supabase
+        .from('activity_points')
+        .select('*')
+        .eq('class_name', cls)
+        .order('created_at', { ascending: false })
+    ]);
+
+    const agg = {};
+    (ptData || []).forEach(p => {
+      if (!agg[p.adm_no]) agg[p.adm_no] = { merit: 0, demerit: 0, count: 0 };
+      if (p.points > 0) agg[p.adm_no].merit += p.points;
+      else agg[p.adm_no].demerit += p.points;
+      agg[p.adm_no].count += 1;
+    });
+
+    const rows = (stData || []).map(s => {
+      const a = agg[s.adm_no] || { merit: 0, demerit: 0, count: 0 };
+      const net = a.merit + a.demerit;
+      return {
+        adm_no: s.adm_no,
+        name: s.name,
+        merit: a.merit,
+        demerit: a.demerit,
+        net,
+        standing: getStanding(net)
+      };
+    });
+
+    rows.sort((a, b) => b.net - a.net);
+    rows.forEach((r, idx) => { r.rank = idx + 1; });
+
+    setReportRows(rows);
+    setRecentLogs((ptData || []).slice(0, 25));
+    setLoading(false);
+  }
+
+  async function deleteLog(id) {
+    if (!window.confirm('Delete this activity entry?')) return;
+    await supabase.from('activity_points').delete().eq('id', id);
+    loadClassReport(reportClass);
+  }
+
+  // Add / Delete Reasons (Admin)
   async function addReason(e) {
     e.preventDefault();
-    if (!newReasonTitle.trim() || !newReasonPts) return;
+    if (!newTitle.trim() || !newPoints) return;
+    const val = Math.abs(Number(newPoints));
+    const finalPts = newType === 'demerit' ? -val : val;
+
+    setLoading(true);
     const { error } = await supabase.from('activity_reasons').insert({
-      title: newReasonTitle.trim(),
-      default_points: Number(newReasonPts)
+      title: newTitle.trim(),
+      category: newCategory,
+      points: finalPts
     });
-    if (error) setMsg('❌ Error: ' + error.message);
+    setLoading(false);
+    if (error) setMsg('Error: ' + error.message);
     else {
-      setNewReasonTitle(''); setNewReasonPts('');
-      loadReasons();
+      setNewTitle('');
+      setNewPoints('5');
+      loadInitial();
     }
   }
 
   async function deleteReason(id) {
+    if (!window.confirm('Delete this reason?')) return;
     await supabase.from('activity_reasons').delete().eq('id', id);
-    loadReasons();
+    loadInitial();
   }
 
-  // 3. ക്ലാസ്സ് റാങ്കിംഗ് & ഡിസിപ്ലിൻ റിപ്പോർട്ട്
-  async function generateRanking() {
-    if (!selectedClass) return alert('ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക!');
-    setLoading(true);
-    const [{ data: stData }, { data: ptData }] = await Promise.all([
-      supabase.from('students').select('adm_no, name').eq('class_name', selectedClass).order('name'),
-      supabase.from('activity_points').select('*').eq('class_name', selectedClass)
-    ]);
-
-    const rows = (stData || []).map(s => {
-      const mine = (ptData || []).filter(p => p.adm_no === s.adm_no);
-      const pos = mine.filter(p => p.points > 0).reduce((a, b) => a + b.points, 0);
-      const neg = mine.filter(p => p.points < 0).reduce((a, b) => a + b.points, 0);
-      return { adm_no: s.adm_no, name: s.name, pos, neg, net: pos + neg };
-    }).sort((a, b) => b.net - a.net);
-
-    setRanking({ className: selectedClass, rows });
-    setLoading(false);
+  // Export Helpers
+  function downloadCSV(filename, headers, rows) {
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
-  const Header = ({ title, backAction }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-      <button onClick={backAction} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-        <ChevronLeft size={20} />
-      </button>
-      <h2 style={{ fontSize: 20, fontWeight: 800 }}>{title}</h2>
-    </div>
-  );
+  function downloadPDF(elId, filename) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    html2pdf().set({
+      margin: 8, filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(el).save();
+  }
 
-  if (view === 'student_view') {
+  async function downloadJPEG(elId, filename) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const worker = html2pdf().set({
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }
+    }).from(el);
+    const canvas = await worker.toCanvas().get('canvas');
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = canvas.toDataURL('image/jpeg', 0.95);
+    link.click();
+  }
+
+  // ==========================================
+  // STUDENT / PARENT SELF-VIEW
+  // ==========================================
+  if (isStudent) {
+    const standing = mySummary ? getStanding(mySummary.net) : null;
     return (
       <div>
-        <Header title="My Activity Points" backAction={onBack} />
-        {loading || !studentLogs ? <p style={{ textAlign: 'center', color: '#64748b' }}>ലോഡ് ചെയ്യുന്നു...</p> : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+            <ChevronLeft size={20} />
+          </button>
+          <h2 style={{ fontSize: 20, fontWeight: 800 }}>Activity & Conduct</h2>
+        </div>
+
+        {loading || !mySummary ? (
+          <p style={{ textAlign: 'center', color: '#64748b', fontSize: 13 }}>Loading...</p>
+        ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ background: '#2e44d2', color: '#fff', padding: 18, borderRadius: 16, textAlign: 'center' }}>
-              <div style={{ fontSize: 12, opacity: 0.85 }}>Net Activity Score</div>
-              <div style={{ fontSize: 32, fontWeight: 800 }}>{studentLogs.total > 0 ? `+${studentLogs.total}` : studentLogs.total}</div>
-            </div>
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
-              {studentLogs.list.length === 0 ? <p style={{ fontSize: 13, color: '#94a3b8' }}>പോയിന്റുകളൊന്നും ഇതുവരെ രേഖപ്പെടുത്തിയിട്ടില്ല.</p> : studentLogs.list.map(item => (
-                <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{item.reason}</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>By {item.awarded_by}</div>
-                  </div>
-                  <span style={{ fontWeight: 800, fontSize: 15, color: item.points >= 0 ? '#16a34a' : '#dc2626' }}>
-                    {item.points > 0 ? `+${item.points}` : item.points}
-                  </span>
+            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>{user.name}</div>
+                <span style={{ fontSize: 11, fontWeight: 800, padding: '4px 10px', borderRadius: 8, background: standing.bg, color: standing.color }}>
+                  {standing.label}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <div style={{ background: '#ecfdf5', padding: 10, borderRadius: 10, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#047857' }}>Merit (+)</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#047857' }}>+{mySummary.merit}</div>
                 </div>
-              ))}
+                <div style={{ background: '#fef2f2', padding: 10, borderRadius: 10, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#dc2626' }}>Demerit (-)</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#dc2626' }}>{mySummary.demerit}</div>
+                </div>
+                <div style={{ background: '#eff6ff', padding: 10, borderRadius: 10, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#1d4ed8' }}>Net Score</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: '#1d4ed8' }}>{mySummary.net > 0 ? `+${mySummary.net}` : mySummary.net}</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#334155', marginBottom: 10 }}>Activity History</div>
+              {mySummary.logs.length === 0 ? (
+                <p style={{ fontSize: 12, color: '#64748b', textAlign: 'center' }}>No records yet.</p>
+              ) : (
+                mySummary.logs.map(l => (
+                  <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderBottom: '1px solid #f1f5f9' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{l.reason}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>
+                        {l.category} • {String(l.created_at).slice(0, 10)} • {l.recorded_by}
+                      </div>
+                      {l.remarks && <div style={{ fontSize: 11, color: '#475569', marginTop: 2 }}>{l.remarks}</div>}
+                    </div>
+                    <span style={{ fontWeight: 800, fontSize: 13, color: l.points > 0 ? '#16a34a' : '#dc2626' }}>
+                      {l.points > 0 ? `+${l.points}` : l.points}
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -191,179 +345,287 @@ export default function ActivityModule({ onBack, user }) {
     );
   }
 
-  if (view === 'menu') {
-    return (
-      <div>
-        <Header title="Activity Points" backAction={onBack} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {[
-            { id: 'entry', label: 'Single / Bulk point entry', icon: PlusCircle },
-            { id: 'ranking', label: 'Class ranking & Discipline report', icon: Trophy },
-            { id: 'reasons', label: 'Reasons and categories', icon: ListChecks }
-          ].map(item => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => { setView(item.id); setMsg(''); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0', cursor: 'pointer', textAlign: 'left', width: '100%' }}
-              >
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center' }}>
-                  <Icon size={18} />
-                </div>
-                <span style={{ fontWeight: 600, fontSize: 14, color: '#1e293b' }}>{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
+  // ==========================================
+  // STAFF / ADMIN VIEW
+  // ==========================================
+  const meritReasons = reasons.filter(r => r.points > 0);
+  const demeritReasons = reasons.filter(r => r.points < 0);
 
   return (
     <div>
-      <Header
-        title={view === 'entry' ? 'Point Entry' : view === 'ranking' ? 'Class Ranking' : 'Manage Reasons'}
-        backAction={() => setView('menu')}
-      />
-      {msg && <div style={{ background: '#eff6ff', color: '#1e40af', padding: 12, borderRadius: 10, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{msg}</div>}
+      {/* HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+          <ChevronLeft size={20} />
+        </button>
+        <h2 style={{ fontSize: 20, fontWeight: 800 }}>Activity & Conduct</h2>
+      </div>
 
-      {/* 1. SINGLE / BULK ENTRY */}
-      {view === 'entry' && (
-        <form onSubmit={savePoints} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <select value={selectedClass} onChange={e => loadStudentsForClass(e.target.value)} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1' }}>
-              <option value="">-- ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
+      {/* TOP TABS */}
+      <div style={{ display: 'flex', background: '#e2e8f0', padding: 4, borderRadius: 14, marginBottom: 14, gap: 4 }}>
+        {[
+          { id: 'entry', label: 'Point Entry' },
+          { id: 'report', label: 'Ranking & Report' },
+          { id: 'reasons', label: 'Reasons' }
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => { setTab(t.id); setMsg(''); }}
+            style={{
+              flex: 1, padding: '10px 4px', borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 11, cursor: 'pointer',
+              background: tab === t.id ? '#fff' : 'transparent',
+              color: tab === t.id ? '#2e44d2' : '#475569'
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-            {reasons.length > 0 && (
-              <select value={reasonId} onChange={e => handleReasonSelect(e.target.value)} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1' }}>
-                <option value="">-- Preset Reason (Optional) --</option>
-                {reasons.map(r => (
-                  <option key={r.id} value={r.id}>{r.title} ({r.default_points > 0 ? '+' : ''}{r.default_points})</option>
-                ))}
+      {msg && (
+        <div style={{ background: '#eff6ff', color: '#1e40af', padding: 11, borderRadius: 10, fontSize: 12, fontWeight: 600, marginBottom: 12 }}>
+          {msg}
+        </div>
+      )}
+
+      {/* ================================================= */}
+      {/* TAB 1: SINGLE / BULK MERIT (+) & DEMERIT (-)      */}
+      {/* ================================================= */}
+      {tab === 'entry' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Class</label>
+              <select value={selectedClass} onChange={e => loadClassStudents(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 4, background: '#fff', fontWeight: 600 }}>
+                <option value="">Select Class</option>
+                {classes.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-            )}
+            </div>
 
-            <input
-              required
-              value={customReason}
-              onChange={e => setCustomReason(e.target.value)}
-              placeholder="കാരണം (ഉദാ: Quiz Winner, Late Coming)"
-              style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1' }}
-            />
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              <select value={pointType} onChange={e => setPointType(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontWeight: 700, color: pointType === 'positive' ? '#16a34a' : '#dc2626' }}>
-                <option value="positive">+ Positive (Reward)</option>
-                <option value="negative">- Negative (Penalty)</option>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Merit (+) / Demerit (-) Reason</label>
+              <select value={selectedReasonId} onChange={e => handleReasonSelect(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 4, background: '#fff', fontWeight: 600 }}>
+                <option value="">Select Reason</option>
+                <optgroup label="Merit (+)">
+                  {meritReasons.map(r => (
+                    <option key={r.id} value={r.id}>+{r.points} | {r.title} ({r.category})</option>
+                  ))}
+                </optgroup>
+                <optgroup label="Demerit (-)">
+                  {demeritReasons.map(r => (
+                    <option key={r.id} value={r.id}>{r.points} | {r.title} ({r.category})</option>
+                  ))}
+                </optgroup>
               </select>
-              <input
-                required
-                type="number"
-                value={points}
-                onChange={e => setPoints(e.target.value)}
-                placeholder="Points"
-                style={{ width: 90, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', textAlign: 'center' }}
-              />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '0.8fr 2fr', gap: 8 }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Points</label>
+                <input
+                  type="number"
+                  value={customPoints}
+                  onChange={e => setCustomPoints(e.target.value)}
+                  placeholder="+5 / -5"
+                  style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 4, fontWeight: 800, color: Number(customPoints) < 0 ? '#dc2626' : '#16a34a' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Remarks (Optional)</label>
+                <input
+                  value={remarks}
+                  onChange={e => setRemarks(e.target.value)}
+                  placeholder="Short note..."
+                  style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 4 }}
+                />
+              </div>
             </div>
           </div>
 
           {students.length > 0 && (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, paddingBottom: 8, borderBottom: '1px solid #f1f5f9' }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>Select Students ({selectedStudents.length}/{students.length})</span>
-                <button type="button" onClick={toggleAllStudents} style={{ background: '#eff6ff', color: '#2e44d2', border: 'none', padding: '5px 10px', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                  {selectedStudents.length === students.length ? 'Deselect All' : 'Select All'}
-                </button>
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, fontWeight: 700, color: '#334155', padding: '0 4px' }}>
+                <span>Selected: {selectedAdms.size} / {students.length}</span>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={() => setSelectedAdms(new Set(students.map(s => s.adm_no)))} style={{ border: 'none', background: 'none', color: '#2e44d2', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>Select All</button>
+                  <button onClick={() => setSelectedAdms(new Set())} style={{ border: 'none', background: 'none', color: '#dc2626', fontWeight: 700, cursor: 'pointer', fontSize: 12 }}>Clear</button>
+                </div>
               </div>
-              <div style={{ maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {students.map(s => {
-                  const checked = selectedStudents.includes(s.adm_no);
+
+              <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                {students.map((s, idx) => {
+                  const checked = selectedAdms.has(s.adm_no);
                   return (
                     <div
                       key={s.adm_no}
                       onClick={() => toggleStudent(s.adm_no)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 10, cursor: 'pointer', background: checked ? '#eff6ff' : '#f8fafc', border: checked ? '1px solid #bfdbfe' : '1px solid transparent' }}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '10px 14px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer',
+                        background: checked ? '#eff6ff' : '#fff'
+                      }}
                     >
-                      {checked ? <CheckSquare size={18} color="#2e44d2" /> : <Square size={18} color="#94a3b8" />}
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{s.name}</span>
-                      <span style={{ fontSize: 11, color: '#64748b', marginLeft: 'auto' }}>{s.adm_no}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {checked ? <CheckSquare size={18} color="#2e44d2" /> : <Square size={18} color="#cbd5e1" />}
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{idx + 1}. {s.name}</div>
+                          <div style={{ fontSize: 11, color: '#64748b' }}>Adm: {s.adm_no}</div>
+                        </div>
+                      </div>
                     </div>
                   );
                 })}
               </div>
-              <button type="submit" disabled={loading} style={{ width: '100%', marginTop: 12, padding: 13, borderRadius: 12, border: 'none', background: pointType === 'positive' ? '#16a34a' : '#dc2626', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                {loading ? 'Saving...' : `Submit Points (${selectedStudents.length} Students)`}
-              </button>
-            </div>
-          )}
-        </form>
-      )}
 
-      {/* 2. CLASS RANKING */}
-      {view === 'ranking' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}>
-              <option value="">-- ക്ലാസ്സ് --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button onClick={generateRanking} style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-              View
-            </button>
-          </div>
-          {ranking && (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 12 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, textAlign: 'center' }}>
-                <thead style={{ background: '#1e293b', color: '#fff' }}>
-                  <tr>
-                    <th style={{ padding: 8 }}>#</th>
-                    <th style={{ padding: 8, textAlign: 'left' }}>Name</th>
-                    <th style={{ padding: 8 }}>+ve</th>
-                    <th style={{ padding: 8 }}>-ve</th>
-                    <th style={{ padding: 8 }}>Net</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {ranking.rows.map((r, i) => (
-                    <tr key={r.adm_no} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: 8, fontWeight: 700 }}>{i + 1}</td>
-                      <td style={{ padding: 8, textAlign: 'left', fontWeight: 600 }}>{r.name}</td>
-                      <td style={{ padding: 8, color: '#16a34a' }}>+{r.pos}</td>
-                      <td style={{ padding: 8, color: '#dc2626' }}>{r.neg}</td>
-                      <td style={{ padding: 8, fontWeight: 800, color: r.net >= 0 ? '#2e44d2' : '#dc2626' }}>{r.net}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+              <button
+                onClick={submitPoints}
+                disabled={loading}
+                style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: Number(customPoints) < 0 ? '#dc2626' : '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              >
+                <Save size={16} /> {loading ? 'Saving...' : `Record Points (${selectedAdms.size})`}
+              </button>
+            </>
           )}
         </div>
       )}
 
-      {/* 3. MANAGE REASONS */}
-      {view === 'reasons' && (
+      {/* ================================================= */}
+      {/* TAB 2: CLASS RANKING & DISCIPLINE REPORT          */}
+      {/* ================================================= */}
+      {tab === 'report' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <form onSubmit={addReason} style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', gap: 8 }}>
-            <input required placeholder="Reason title" value={newReasonTitle} onChange={e => setNewReasonTitle(e.target.value)} style={{ flex: 2, padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }} />
-            <input required type="number" placeholder="Pts (e.g. 5 or -5)" value={newReasonPts} onChange={e => setNewReasonPts(e.target.value)} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }} />
-            <button type="submit" style={{ padding: '0 14px', borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Add</button>
-          </form>
+          <select value={reportClass} onChange={e => loadClassReport(e.target.value)} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 600 }}>
+            <option value="">Select Class</option>
+            {classes.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {reasons.map(r => (
-              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '12px 14px', borderRadius: 12, border: '1px solid #e2e8f0' }}>
-                <div>
-                  <span style={{ fontWeight: 600, fontSize: 14 }}>{r.title}</span>
-                  <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: r.default_points >= 0 ? '#16a34a' : '#dc2626' }}>
-                    ({r.default_points > 0 ? '+' : ''}{r.default_points})
-                  </span>
+          {reportRows.length > 0 && (
+            <>
+              <div id="nhia-activity-report" style={{ background: '#fff', borderRadius: 14, border: '1px solid #cbd5e1', padding: 14, overflowX: 'auto' }}>
+                <div style={{ textAlign: 'center', borderBottom: '2px solid #1e293b', paddingBottom: 8, marginBottom: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 900 }}>TARBIYAH & CONDUCT REPORT — {reportClass}</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Noorul Hidaya Islamic Academy • 2026–27</div>
                 </div>
-                <button onClick={() => deleteReason(r.id)} style={{ background: '#fee2e2', color: '#dc2626', border: 'none', padding: 7, borderRadius: 8, cursor: 'pointer' }}>
-                  <Trash2 size={15} />
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, whiteSpace: 'nowrap' }}>
+                  <thead style={{ background: '#1e293b', color: '#fff' }}>
+                    <tr>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Rank</th>
+                      <th style={{ padding: 7, border: '1px solid #334155', textAlign: 'left' }}>Student</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Merit (+)</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Demerit (-)</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Net</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Standing</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reportRows.map(r => (
+                      <tr key={r.adm_no}>
+                        <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 700 }}>#{r.rank}</td>
+                        <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 700 }}>
+                          {r.name} <span style={{ color: '#64748b', fontWeight: 400 }}>({r.adm_no})</span>
+                        </td>
+                        <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'center', color: '#16a34a', fontWeight: 700 }}>+{r.merit}</td>
+                        <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'center', color: '#dc2626', fontWeight: 700 }}>{r.demerit}</td>
+                        <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 800, color: r.net < 0 ? '#dc2626' : '#2e44d2' }}>
+                          {r.net > 0 ? `+${r.net}` : r.net}
+                        </td>
+                        <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: r.standing.bg, color: r.standing.color }}>
+                            {r.standing.label}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <button onClick={() => downloadPDF('nhia-activity-report', `Conduct_Report_${reportClass}.pdf`)} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <Download size={14} /> PDF
                 </button>
+                <button onClick={() => downloadJPEG('nhia-activity-report', `Conduct_Report_${reportClass}.jpg`)} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <ImageIcon size={14} /> JPEG
+                </button>
+                <button
+                  onClick={() => downloadCSV(
+                    `Conduct_Report_${reportClass}.csv`,
+                    ['Rank', 'Adm No', 'Name', 'Merit (+)', 'Demerit (-)', 'Net Score', 'Standing'],
+                    reportRows.map(r => [r.rank, r.adm_no, r.name, r.merit, r.demerit, r.net, r.standing.label])
+                  )}
+                  style={{ padding: 11, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                >
+                  <FileSpreadsheet size={14} /> Excel
+                </button>
+              </div>
+
+              {/* RECENT LOGS WITH UNDO */}
+              {recentLogs.length > 0 && (
+                <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Recent Entries ({reportClass})</div>
+                  {recentLogs.map(l => (
+                    <div key={l.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 700 }}>Adm {l.adm_no} — {l.reason}</div>
+                        <div style={{ fontSize: 10, color: '#64748b' }}>{String(l.created_at).slice(0, 10)} • {l.recorded_by}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontWeight: 800, color: l.points > 0 ? '#16a34a' : '#dc2626' }}>
+                          {l.points > 0 ? `+${l.points}` : l.points}
+                        </span>
+                        {isAdmin && (
+                          <Trash2 size={14} color="#dc2626" style={{ cursor: 'pointer' }} onClick={() => deleteLog(l.id)} />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ================================================= */}
+      {/* TAB 3: REASONS & CATEGORIES MANAGER               */}
+      {/* ================================================= */}
+      {tab === 'reasons' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {isAdmin && (
+            <form onSubmit={addReason} style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Add New Reason</div>
+              <input required value={newTitle} onChange={e => setNewTitle(e.target.value)} placeholder="Reason title (e.g. Library Research, Late Return)" style={{ padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }} />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 0.7fr', gap: 8 }}>
+                <select value={newCategory} onChange={e => setNewCategory(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <select value={newType} onChange={e => setNewType(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+                  <option value="merit">Merit (+)</option>
+                  <option value="demerit">Demerit (-)</option>
+                </select>
+                <input required type="number" min="1" value={newPoints} onChange={e => setNewPoints(e.target.value)} placeholder="Pts" style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 700 }} />
+              </div>
+              <button type="submit" disabled={loading} style={{ padding: 10, borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                Add Reason
+              </button>
+            </form>
+          )}
+
+          <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+            {reasons.map(r => (
+              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #f1f5f9' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{r.title}</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>{r.category}</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{ fontWeight: 800, fontSize: 12, padding: '3px 8px', borderRadius: 6, background: r.points > 0 ? '#dcfce7' : '#fee2e2', color: r.points > 0 ? '#15803d' : '#dc2626' }}>
+                    {r.points > 0 ? `+${r.points}` : r.points}
+                  </span>
+                  {isAdmin && (
+                    <Trash2 size={14} color="#dc2626" style={{ cursor: 'pointer' }} onClick={() => deleteReason(r.id)} />
+                  )}
+                </div>
               </div>
             ))}
           </div>
