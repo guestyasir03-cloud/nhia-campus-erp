@@ -1,242 +1,360 @@
 import React, { useState, useEffect } from 'react';
-import { Wallet, FileSpreadsheet, ChevronLeft, Save, Download } from 'lucide-react';
+import {
+  ChevronLeft, Save, Download, Image as ImageIcon,
+  FileSpreadsheet, Copy, Wallet
+} from 'lucide-react';
+import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
 
-const AC_MONTHS = [
-  'Previous Arrears', 'April', 'May', 'June', 'July', 'August', 'September',
-  'October', 'November', 'December', 'January', 'February', 'March'
-];
-
-function getMonthsPassedSinceApril() {
-  const m = new Date().getMonth(); // 0 = Jan, 3 = Apr
-  return m >= 3 ? m - 3 + 1 : m + 9 + 1;
-}
+const MONTHS = ['Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar'];
+const ACADEMIC_YEAR = '2026-27';
 
 export default function FinanceModule({ onBack, user }) {
-  const [view, setView] = useState(user?.role === 'student' ? 'student_view' : 'menu');
+  const isStudent = user?.role === 'student';
+  const [tab, setTab] = useState('ledger'); // ledger | parent_report | admin_report
   const [classes, setClasses] = useState([]);
   const [selectedClass, setSelectedClass] = useState('');
-  const [students, setStudents] = useState([]);
-  const [paidMap, setPaidMap] = useState({}); // key: `${adm_no}_${month}` -> paid_amount
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
-  // Report & Student View State
-  const [reportData, setReportData] = useState(null);
-  const [studentFee, setStudentFee] = useState(null);
+  // Ledger State
+  const [students, setStudents] = useState([]);
+  const [amountMap, setAmountMap] = useState({}); // { adm_no: monthly_donation }
+  const [paidMap, setPaidMap] = useState({}); // { adm_no: Set(['Apr', 'May']) }
+  const [initialPaidMap, setInitialPaidMap] = useState({});
+
+  // Admin Campus Summary State
+  const [campusReport, setCampusReport] = useState(null);
+
+  // Student Self-View State
+  const [myData, setMyData] = useState(null);
 
   useEffect(() => {
-    loadClasses();
-    if (user?.role === 'student' && user.id) {
-      loadStudentFee(user.id);
+    if (isStudent && user?.id) {
+      loadStudentSelfView(user.id);
+    } else {
+      loadClasses();
     }
   }, []);
 
   async function loadClasses() {
     const { data } = await supabase.from('students').select('class_name');
     if (data) {
-      setClasses([...new Set(data.map(d => d.class_name).filter(Boolean))].sort());
+      setClasses([...new Set(data.map(d => d.class_name).filter(Boolean))].filter(c => c !== 'ALUMNI').sort());
     }
   }
 
-  // സ്റ്റുഡന്റിന് സ്വന്തം ഫീസ്/ഡൊണേഷൻ സ്റ്റാറ്റസ് കാണാൻ
-  async function loadStudentFee(admNo) {
+  async function loadStudentSelfView(admNo) {
     setLoading(true);
-    const [{ data: st }, { data: don }] = await Promise.all([
-      supabase.from('students').select('*').eq('adm_no', admNo).maybeSingle(),
-      supabase.from('donations').select('*').eq('adm_no', admNo)
+    const [{ data: st }, { data: pay }] = await Promise.all([
+      supabase.from('students').select('adm_no, name, class_name, monthly_donation').eq('adm_no', admNo).maybeSingle(),
+      supabase.from('donation_payments').select('*').eq('adm_no', admNo).eq('academic_year', ACADEMIC_YEAR)
     ]);
 
-    if (!st) { setLoading(false); return; }
-
-    const saved = {};
-    (don || []).forEach(d => { saved[d.month] = { exp: Number(d.expected_amount) || 0, paid: Number(d.paid_amount) || 0 }; });
-
-    const monthsCount = getMonthsPassedSinceApril();
-    const monthsToCount = AC_MONTHS.slice(1, 1 + monthsCount);
-    const list = [];
-    let totalExp = 0, totalPaid = 0;
-
-    // Previous Arrears
-    const arrExp = Number(st.prev_arrears) || 0;
-    const arrPaid = saved['Previous Arrears']?.paid || 0;
-    if (arrExp > 0 || arrPaid > 0) {
-      list.push({ month: 'Previous Arrears (കുടിശ്ശിക)', exp: arrExp, paid: arrPaid, bal: arrExp - arrPaid });
-      totalExp += arrExp; totalPaid += arrPaid;
-    }
-
-    // Monthly
-    monthsToCount.forEach(m => {
-      const mExp = saved[m] ? saved[m].exp : (Number(st.monthly_pledge) || 0);
-      const mPaid = saved[m] ? saved[m].paid : 0;
-      list.push({ month: m, exp: mExp, paid: mPaid, bal: mExp - mPaid });
-      totalExp += mExp; totalPaid += mPaid;
+    const paidSet = new Set((pay || []).map(p => p.month_code));
+    const totalPaid = (pay || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+    setMyData({
+      student: st,
+      paidSet,
+      totalPaid,
+      lastPaid: getLastPaidMonth(paidSet)
     });
-
-    setStudentFee({ list, totalExp, totalPaid, pending: totalExp - totalPaid });
     setLoading(false);
   }
 
-  // 1. ക്ലാസ്സ് ലെഡ്ജർ ലോഡ് ചെയ്യുന്നു
-  async function loadLedger() {
-    if (!selectedClass) return alert('ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക!');
-    setLoading(true); setMsg('');
-    const [{ data: stData }, { data: donData }] = await Promise.all([
-      supabase.from('students').select('*').eq('class_name', selectedClass).order('name'),
-      supabase.from('donations').select('*').eq('class_name', selectedClass)
+  async function loadClassLedger(cls) {
+    setSelectedClass(cls);
+    setMsg('');
+    if (!cls) {
+      setStudents([]);
+      return;
+    }
+    setLoading(true);
+
+    const [{ data: stData }, { data: payData }] = await Promise.all([
+      supabase
+        .from('students')
+        .select('adm_no, name, roll_no, monthly_donation')
+        .eq('class_name', cls)
+        .order('roll_no', { ascending: true, nullsFirst: false })
+        .order('name'),
+      supabase
+        .from('donation_payments')
+        .select('adm_no, month_code, amount')
+        .eq('class_name', cls)
+        .eq('academic_year', ACADEMIC_YEAR)
     ]);
 
-    const map = {};
-    (donData || []).forEach(d => {
-      map[`${d.adm_no}_${d.month}`] = d.paid_amount;
+    const aMap = {};
+    const pMap = {};
+    const initPMap = {};
+
+    (stData || []).forEach(s => {
+      aMap[s.adm_no] = s.monthly_donation ?? 0;
+      pMap[s.adm_no] = new Set();
+      initPMap[s.adm_no] = new Set();
+    });
+
+    (payData || []).forEach(p => {
+      if (pMap[p.adm_no]) {
+        pMap[p.adm_no].add(p.month_code);
+        initPMap[p.adm_no].add(p.month_code);
+      }
     });
 
     setStudents(stData || []);
-    setPaidMap(map);
+    setAmountMap(aMap);
+    setPaidMap(pMap);
+    setInitialPaidMap(initPMap);
     setLoading(false);
   }
 
-  function updatePaid(admNo, mth, val) {
-    setPaidMap(prev => ({ ...prev, [`${admNo}_${mth}`]: val }));
-  }
-
-  async function saveLedger() {
-    setLoading(true); setMsg('');
-    const rows = [];
-
-    students.forEach(s => {
-      AC_MONTHS.forEach(m => {
-        const key = `${s.adm_no}_${m}`;
-        const rawVal = paidMap[key];
-        if (rawVal === undefined || rawVal === '') return;
-
-        const paid = Number(rawVal) || 0;
-        const exp = m === 'Previous Arrears' ? (Number(s.prev_arrears) || 0) : (Number(s.monthly_pledge) || 0);
-        if (m === 'Previous Arrears' && exp === 0 && paid === 0) return;
-
-        rows.push({
-          adm_no: s.adm_no,
-          class_name: selectedClass,
-          month: m,
-          expected_amount: exp,
-          paid_amount: paid,
-          balance: exp - paid,
-          academic_year: '2026-27'
-        });
-      });
+  function toggleMonth(admNo, mCode) {
+    setPaidMap(prev => {
+      const next = new Set(prev[admNo] || []);
+      if (next.has(mCode)) next.delete(mCode);
+      else next.add(mCode);
+      return { ...prev, [admNo]: next };
     });
-
-    if (rows.length === 0) {
-      setLoading(false);
-      return setMsg('⚠️ സേവ് ചെയ്യാൻ തുകയൊന്നും നൽകിയിട്ടില്ല.');
-    }
-
-    const { error } = await supabase.from('donations').upsert(rows, { onConflict: 'adm_no,month,academic_year' });
-    setLoading(false);
-    if (error) setMsg('❌ Error: ' + error.message);
-    else setMsg(`✅ ${selectedClass} ക്ലാസ്സിലെ ലെഡ്ജർ വിജയകരമായി സേവ് ചെയ്തു!`);
   }
 
-  // 2. ഫിനാൻഷ്യൽ റിപ്പോർട്ട് (Till Date)
-  async function generateReport() {
-    if (!selectedClass) return alert('ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക!');
+  function getLastPaidMonth(paidSet) {
+    if (!paidSet || paidSet.size === 0) return 'Not Paid';
+    for (let i = MONTHS.length - 1; i >= 0; i--) {
+      if (paidSet.has(MONTHS[i])) return MONTHS[i];
+    }
+    return 'Not Paid';
+  }
+
+  async function saveClassLedger() {
+    if (students.length === 0) return;
     setLoading(true);
-    const [{ data: stData }, { data: donData }] = await Promise.all([
-      supabase.from('students').select('*').eq('class_name', selectedClass).order('name'),
-      supabase.from('donations').select('*').eq('class_name', selectedClass)
-    ]);
+    setMsg('');
 
-    const monthsCount = getMonthsPassedSinceApril();
-    const monthsToCount = AC_MONTHS.slice(1, 1 + monthsCount);
-
-    const rows = (stData || []).map(s => {
-      const mine = (donData || []).filter(d => d.adm_no === s.adm_no);
-      const saved = {};
-      mine.forEach(d => { saved[d.month] = { exp: Number(d.expected_amount) || 0, paid: Number(d.paid_amount) || 0 }; });
-
-      let totalExp = Number(s.prev_arrears) || 0;
-      let totalPaid = 0;
-      const paidList = [];
-
-      if (saved['Previous Arrears']?.paid > 0) {
-        totalPaid += saved['Previous Arrears'].paid;
-        paidList.push(`Arr(₹${saved['Previous Arrears'].paid})`);
-      }
-
-      monthsToCount.forEach(m => {
-        if (saved[m]) {
-          totalExp += saved[m].exp;
-          totalPaid += saved[m].paid;
-          if (saved[m].paid > 0) paidList.push(`${m.slice(0, 3)}(₹${saved[m].paid})`);
-        } else {
-          totalExp += Number(s.monthly_pledge) || 0;
-        }
-      });
-
-      return {
+    try {
+      // 1. Batch update custom monthly amounts on students table
+      const studentUpdates = students.map(s => ({
         adm_no: s.adm_no,
         name: s.name,
-        totalExp,
-        totalPaid,
-        pending: totalExp - totalPaid,
-        paidMonths: paidList.length > 0 ? paidList.join(', ') : 'None'
-      };
+        class_name: selectedClass,
+        monthly_donation: Number(amountMap[s.adm_no]) || 0
+      }));
+
+      // 2. Prepare payment upserts & deletes
+      const toUpsert = [];
+      const toDelete = [];
+
+      students.forEach(s => {
+        const amt = Number(amountMap[s.adm_no]) || 0;
+        const currSet = paidMap[s.adm_no] || new Set();
+        const origSet = initialPaidMap[s.adm_no] || new Set();
+
+        currSet.forEach(m => {
+          toUpsert.push({
+            adm_no: s.adm_no,
+            class_name: selectedClass,
+            academic_year: ACADEMIC_YEAR,
+            month_code: m,
+            amount: amt,
+            recorded_by: user?.name || 'Admin'
+          });
+        });
+
+        origSet.forEach(m => {
+          if (!currSet.has(m)) {
+            toDelete.push({ adm_no: s.adm_no, month_code: m });
+          }
+        });
+      });
+
+      const ops = [supabase.from('students').upsert(studentUpdates, { onConflict: 'adm_no' })];
+      if (toUpsert.length > 0) {
+        ops.push(supabase.from('donation_payments').upsert(toUpsert, { onConflict: 'adm_no,academic_year,month_code' }));
+      }
+      await Promise.all(ops);
+
+      // Delete unchecked payments if any
+      for (const del of toDelete) {
+        await supabase
+          .from('donation_payments')
+          .delete()
+          .eq('adm_no', del.adm_no)
+          .eq('academic_year', ACADEMIC_YEAR)
+          .eq('month_code', del.month_code);
+      }
+
+      // Sync initialPaidMap
+      const synced = {};
+      Object.keys(paidMap).forEach(k => { synced[k] = new Set(paidMap[k]); });
+      setInitialPaidMap(synced);
+
+      setMsg(`Monthly donation ledger saved for ${selectedClass}.`);
+    } catch (err) {
+      setMsg('Error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Generate Campus-wide Financial Summary
+  async function generateCampusSummary() {
+    setLoading(true);
+    const [{ data: stData }, { data: payData }] = await Promise.all([
+      supabase.from('students').select('adm_no, class_name, monthly_donation').neq('class_name', 'ALUMNI'),
+      supabase.from('donation_payments').select('class_name, amount, month_code').eq('academic_year', ACADEMIC_YEAR)
+    ]);
+
+    const clsMap = {};
+    (stData || []).forEach(s => {
+      if (!s.class_name) return;
+      if (!clsMap[s.class_name]) {
+        clsMap[s.class_name] = { className: s.class_name, students: 0, monthlyTarget: 0, totalCollected: 0, paymentsCount: 0 };
+      }
+      clsMap[s.class_name].students += 1;
+      clsMap[s.class_name].monthlyTarget += Number(s.monthly_donation) || 0;
     });
 
-    setReportData({ className: selectedClass, rows });
+    (payData || []).forEach(p => {
+      if (!clsMap[p.class_name]) return;
+      clsMap[p.class_name].totalCollected += Number(p.amount) || 0;
+      clsMap[p.class_name].paymentsCount += 1;
+    });
+
+    const rows = Object.values(clsMap).sort((a, b) => a.className.localeCompare(b.className));
+    const grandTarget = rows.reduce((s, r) => s + r.monthlyTarget, 0);
+    const grandCollected = rows.reduce((s, r) => s + r.totalCollected, 0);
+
+    setCampusReport({ rows, grandTarget, grandCollected });
     setLoading(false);
   }
 
-  function downloadCSV() {
-    if (!reportData) return;
-    const headers = ['Adm No', 'Name', 'Expected (Till Date)', 'Total Paid', 'Total Pending', 'Months Paid'];
-    const csvRows = [headers.join(',')];
-    reportData.rows.forEach(r => {
-      csvRows.push([r.adm_no, `"${r.name}"`, r.totalExp, r.totalPaid, r.pending, `"${r.paidMonths}"`].join(','));
-    });
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  // Export Helpers
+  function downloadCSV(filename, headers, rows) {
+    const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `NHIA_${reportData.className}_Finance_Report.csv`;
+    a.href = url;
+    a.download = filename;
     a.click();
+    URL.revokeObjectURL(url);
   }
 
-  const Header = ({ title, backAction }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-      <button onClick={backAction} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-        <ChevronLeft size={20} />
+  function downloadPDF(elId, filename, landscape = false) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    html2pdf().set({
+      margin: 8, filename,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: landscape ? 'landscape' : 'portrait' }
+    }).from(el).save();
+  }
+
+  async function downloadJPEG(elId, filename) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    try {
+      const worker = html2pdf().set({
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }
+      }).from(el);
+      const canvas = await worker.toCanvas().get('canvas');
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
+      link.click();
+    } catch (err) {
+      alert('JPEG export error: ' + err.message);
+    }
+  }
+
+  function copyParentWhatsApp() {
+    let text = `NOORUL HIDAYA ISLAMIC ACADEMY\n`;
+    text += `Monthly Donation Status — Class ${selectedClass} (${ACADEMIC_YEAR})\n\n`;
+    students.forEach((s, i) => {
+      const last = getLastPaidMonth(paidMap[s.adm_no]);
+      text += `${i + 1}. ${s.name} (${s.adm_no}) — Last Paid: ${last}\n`;
+    });
+    navigator.clipboard.writeText(text);
+    setMsg('Parent report copied to clipboard.');
+  }
+
+  const ExportBar = ({ onPDF, onJPEG, onExcel }) => (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+      <button onClick={onPDF} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+        <Download size={14} /> PDF
       </button>
-      <h2 style={{ fontSize: 20, fontWeight: 800 }}>{title}</h2>
+      <button onClick={onJPEG} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+        <ImageIcon size={14} /> JPEG
+      </button>
+      <button onClick={onExcel} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+        <FileSpreadsheet size={14} /> Excel
+      </button>
     </div>
   );
 
-  if (view === 'student_view') {
+  // ==========================================
+  // STUDENT / PARENT SELF-VIEW
+  // ==========================================
+  if (isStudent) {
     return (
       <div>
-        <Header title="Fee / Donation Status" backAction={onBack} />
-        {loading || !studentFee ? <p style={{ textAlign: 'center', color: '#64748b' }}>ലോഡ് ചെയ്യുന്നു...</p> : (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+            <ChevronLeft size={20} />
+          </button>
+          <h2 style={{ fontSize: 20, fontWeight: 800 }}>Monthly Donation</h2>
+        </div>
+
+        {loading || !myData ? (
+          <p style={{ textAlign: 'center', color: '#64748b', fontSize: 13 }}>Loading...</p>
+        ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-              <div style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                <div style={{ fontSize: 18, fontWeight: 800 }}>₹{studentFee.totalExp}</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>Expected</div>
+            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>{myData.student?.name}</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+                Adm No: {myData.student?.adm_no} • Class: {myData.student?.class_name}
               </div>
-              <div style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: '#16a34a' }}>₹{studentFee.totalPaid}</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>Paid</div>
-              </div>
-              <div style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                <div style={{ fontSize: 18, fontWeight: 800, color: studentFee.pending > 0 ? '#dc2626' : '#16a34a' }}>₹{studentFee.pending}</div>
-                <div style={{ fontSize: 11, color: '#64748b' }}>Pending</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <div style={{ background: '#f8fafc', padding: 10, borderRadius: 10, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Monthly</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a' }}>₹{myData.student?.monthly_donation || 0}</div>
+                </div>
+                <div style={{ background: '#ecfdf5', padding: 10, borderRadius: 10, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#047857' }}>Total Paid</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#047857' }}>₹{myData.totalPaid}</div>
+                </div>
+                <div style={{ background: '#eff6ff', padding: 10, borderRadius: 10, textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#1d4ed8' }}>Last Paid</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: '#1d4ed8' }}>{myData.lastPaid}</div>
+                </div>
               </div>
             </div>
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
-              {studentFee.list.map(d => (
-                <div key={d.month} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
-                  <b>{d.month}</b>
-                  <span>Paid: <b style={{ color: '#16a34a' }}>₹{d.paid}</b> / ₹{d.exp}</span>
-                </div>
-              ))}
+
+            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#334155', marginBottom: 10 }}>
+                Payment Status ({ACADEMIC_YEAR})
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+                {MONTHS.map(m => {
+                  const paid = myData.paidSet.has(m);
+                  return (
+                    <div
+                      key={m}
+                      style={{
+                        padding: '10px 4px', borderRadius: 10, textAlign: 'center', fontWeight: 700, fontSize: 12,
+                        background: paid ? '#dcfce7' : '#f1f5f9',
+                        color: paid ? '#15803d' : '#64748b',
+                        border: paid ? '1px solid #86efac' : '1px solid #e2e8f0'
+                      }}
+                    >
+                      {m}
+                      <div style={{ fontSize: 10, fontWeight: 600, marginTop: 2 }}>{paid ? 'Paid' : 'Pending'}</div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -244,132 +362,299 @@ export default function FinanceModule({ onBack, user }) {
     );
   }
 
-  if (view === 'menu') {
-    return (
-      <div>
-        <Header title="Finance" backAction={onBack} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {[
-            { id: 'ledger', label: 'Class ledger & Monthly collection (Apr–Mar)', icon: Wallet },
-            { id: 'report', label: 'Financial reports (CSV)', icon: FileSpreadsheet }
-          ].map(item => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => { setView(item.id); setMsg(''); }}
-                style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0', cursor: 'pointer', textAlign: 'left', width: '100%' }}
-              >
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center' }}>
-                  <Icon size={18} />
-                </div>
-                <span style={{ fontWeight: 600, fontSize: 14, color: '#1e293b' }}>{item.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
+  // ==========================================
+  // ADMIN / STAFF VIEW
+  // ==========================================
   return (
     <div>
-      <Header title={view === 'ledger' ? 'Class Ledger' : 'Financial Report'} backAction={() => setView('menu')} />
-      {msg && <div style={{ background: '#eff6ff', color: '#1e40af', padding: 12, borderRadius: 10, fontSize: 13, fontWeight: 600, marginBottom: 14 }}>{msg}</div>}
+      {/* HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+          <ChevronLeft size={20} />
+        </button>
+        <h2 style={{ fontSize: 20, fontWeight: 800 }}>Finance & Donations</h2>
+      </div>
 
-      {/* 1. CLASS LEDGER */}
-      {view === 'ledger' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}>
-              <option value="">-- ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button onClick={loadLedger} style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-              Open
-            </button>
-          </div>
+      {/* TOP TABS */}
+      <div style={{ display: 'flex', background: '#e2e8f0', padding: 4, borderRadius: 14, marginBottom: 14, gap: 4 }}>
+        {[
+          { id: 'ledger', label: 'Monthly Ledger' },
+          { id: 'parent_report', label: 'Parent Report' },
+          { id: 'admin_report', label: 'Financial Report' }
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => { setTab(t.id); setMsg(''); }}
+            style={{
+              flex: 1, padding: '10px 4px', borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 11, cursor: 'pointer',
+              background: tab === t.id ? '#fff' : 'transparent',
+              color: tab === t.id ? '#2e44d2' : '#475569'
+            }}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-          {students.length > 0 && (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  <thead style={{ background: '#fef3c7', color: '#92400e' }}>
-                    <tr>
-                      <th style={{ padding: 10, textAlign: 'left' }}>Student</th>
-                      {AC_MONTHS.map(m => <th key={m} style={{ padding: 8 }}>{m === 'Previous Arrears' ? 'Arr' : m.slice(0, 3)}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {students.map(s => (
-                      <tr key={s.adm_no} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <td style={{ padding: 8, textAlign: 'left', fontWeight: 600 }}>
-                          {s.name}<div style={{ fontSize: 10, color: '#dc2626' }}>Exp: ₹{s.monthly_pledge}</div>
-                        </td>
-                        {AC_MONTHS.map(m => (
-                          <td key={m} style={{ padding: 4 }}>
-                            <input
-                              type="number"
-                              value={paidMap[`${s.adm_no}_${m}`] ?? ''}
-                              onChange={e => updatePaid(s.adm_no, m, e.target.value)}
-                              style={{ width: 52, padding: 5, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1', background: m === 'Previous Arrears' ? '#fef2f2' : '#fff' }}
-                            />
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <button onClick={saveLedger} disabled={loading} style={{ width: '100%', padding: 14, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                <Save size={16} /> {loading ? 'Saving...' : 'Save Ledger'}
-              </button>
-            </div>
-          )}
+      {msg && (
+        <div style={{ background: '#eff6ff', color: '#1e40af', padding: 11, borderRadius: 10, fontSize: 12, fontWeight: 600, marginBottom: 12 }}>
+          {msg}
         </div>
       )}
 
-      {/* 2. FINANCIAL REPORT */}
-      {view === 'report' && (
+      {/* CLASS SELECTOR (For Ledger & Parent Report) */}
+      {(tab === 'ledger' || tab === 'parent_report') && (
+        <div style={{ marginBottom: 12 }}>
+          <select
+            value={selectedClass}
+            onChange={e => loadClassLedger(e.target.value)}
+            style={{ width: '100%', padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 600, fontSize: 13 }}
+          >
+            <option value="">Select Class</option>
+            {classes.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+      )}
+
+      {/* ================================================= */}
+      {/* TAB 1: MONTHLY DONATION LEDGER (APR-MAR)          */}
+      {/* ================================================= */}
+      {tab === 'ledger' && students.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {students.map((s, idx) => {
+            const pSet = paidMap[s.adm_no] || new Set();
+            const amt = amountMap[s.adm_no] ?? 0;
+            return (
+              <div key={s.adm_no} style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{idx + 1}. {s.name}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>
+                      Adm: {s.adm_no} • Last Paid: <b style={{ color: '#2e44d2' }}>{getLastPaidMonth(pSet)}</b>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>₹</span>
+                    <input
+                      type="number"
+                      value={amt}
+                      onChange={e => setAmountMap(prev => ({ ...prev, [s.adm_no]: e.target.value }))}
+                      style={{ width: 72, padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', fontWeight: 700, fontSize: 13, textAlign: 'right' }}
+                    />
+                  </div>
+                </div>
+
+                {/* APR - MAR CHIPS */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 5 }}>
+                  {MONTHS.map(m => {
+                    const paid = pSet.has(m);
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => toggleMonth(s.adm_no, m)}
+                        style={{
+                          padding: '6px 2px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                          border: paid ? '1px solid #16a34a' : '1px solid #e2e8f0',
+                          background: paid ? '#16a34a' : '#f8fafc',
+                          color: paid ? '#fff' : '#64748b'
+                        }}
+                      >
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+
+          <button
+            onClick={saveClassLedger}
+            disabled={loading}
+            style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+          >
+            <Save size={16} /> {loading ? 'Saving...' : 'Save Monthly Ledger'}
+          </button>
+        </div>
+      )}
+
+      {/* ================================================= */}
+      {/* TAB 2: PARENT REPORT (PRIVACY-SAFE: NO AMOUNTS)   */}
+      {/* ================================================= */}
+      {tab === 'parent_report' && students.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}>
-              <option value="">-- ക്ലാസ്സ് --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button onClick={generateReport} style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-              Generate
-            </button>
+          <div id="nhia-parent-donation-report" style={{ background: '#fff', borderRadius: 14, border: '1px solid #cbd5e1', padding: 14 }}>
+            <div style={{ textAlign: 'center', borderBottom: '2px solid #1e293b', paddingBottom: 8, marginBottom: 12 }}>
+              <div style={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>NOORUL HIDAYA ISLAMIC ACADEMY</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#2e44d2', marginTop: 2 }}>
+                Monthly Donation Status — Class {selectedClass} ({ACADEMIC_YEAR})
+              </div>
+            </div>
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead style={{ background: '#1e293b', color: '#fff' }}>
+                <tr>
+                  <th style={{ padding: 8, textAlign: 'center', border: '1px solid #334155' }}>Sl</th>
+                  <th style={{ padding: 8, textAlign: 'center', border: '1px solid #334155' }}>Adm No</th>
+                  <th style={{ padding: 8, textAlign: 'left', border: '1px solid #334155' }}>Student Name</th>
+                  <th style={{ padding: 8, textAlign: 'center', border: '1px solid #334155' }}>Last Paid Month</th>
+                </tr>
+              </thead>
+              <tbody>
+                {students.map((s, idx) => {
+                  const last = getLastPaidMonth(paidMap[s.adm_no]);
+                  return (
+                    <tr key={s.adm_no}>
+                      <td style={{ padding: 8, textAlign: 'center', border: '1px solid #e2e8f0', color: '#64748b' }}>{idx + 1}</td>
+                      <td style={{ padding: 8, textAlign: 'center', border: '1px solid #e2e8f0', color: '#475569' }}>{s.adm_no}</td>
+                      <td style={{ padding: 8, fontWeight: 700, border: '1px solid #e2e8f0' }}>{s.name}</td>
+                      <td style={{ padding: 8, textAlign: 'center', fontWeight: 800, border: '1px solid #e2e8f0', color: last === 'Not Paid' ? '#dc2626' : '#16a34a' }}>
+                        {last}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
-          {reportData && (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 12 }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center', whiteSpace: 'nowrap' }}>
+          <button onClick={copyParentWhatsApp} style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: '#25d366', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <Copy size={14} /> Copy for WhatsApp
+          </button>
+
+          <ExportBar
+            onPDF={() => downloadPDF('nhia-parent-donation-report', `Donation_Status_${selectedClass}.pdf`)}
+            onJPEG={() => downloadJPEG('nhia-parent-donation-report', `Donation_Status_${selectedClass}.jpg`)}
+            onExcel={() => downloadCSV(
+              `Donation_Status_${selectedClass}.csv`,
+              ['Sl No', 'Adm No', 'Student Name', 'Last Paid Month'],
+              students.map((s, i) => [i + 1, s.adm_no, s.name, getLastPaidMonth(paidMap[s.adm_no])])
+            )}
+          />
+        </div>
+      )}
+
+      {/* ================================================= */}
+      {/* TAB 3: ADMIN FINANCIAL REPORT (FULL DETAILS)      */}
+      {/* ================================================= */}
+      {tab === 'admin_report' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Class-wise Detailed Financial Report */}
+          <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Class Financial Report</div>
+            <select value={selectedClass} onChange={e => loadClassLedger(e.target.value)} style={{ padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 600 }}>
+              <option value="">Select Class</option>
+              {classes.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+
+          {selectedClass && students.length > 0 && (
+            <>
+              <div id="nhia-admin-class-finance" style={{ background: '#fff', borderRadius: 14, border: '1px solid #cbd5e1', padding: 14, overflowX: 'auto' }}>
+                <div style={{ textAlign: 'center', marginBottom: 10, borderBottom: '2px solid #1e293b', paddingBottom: 6 }}>
+                  <div style={{ fontSize: 14, fontWeight: 900 }}>FINANCIAL COLLECTION REPORT — {selectedClass}</div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Academic Year {ACADEMIC_YEAR}</div>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, whiteSpace: 'nowrap' }}>
                   <thead style={{ background: '#1e293b', color: '#fff' }}>
                     <tr>
-                      <th style={{ padding: 8, textAlign: 'left' }}>Name</th>
-                      <th style={{ padding: 8 }}>Expected</th>
-                      <th style={{ padding: 8 }}>Paid</th>
-                      <th style={{ padding: 8 }}>Pending</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Adm</th>
+                      <th style={{ padding: 7, border: '1px solid #334155', textAlign: 'left' }}>Name</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Monthly (₹)</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Months Paid</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Total Paid (₹)</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Last Paid</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {reportData.rows.map(r => (
-                      <tr key={r.adm_no} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: 8, textAlign: 'left', fontWeight: 600 }}>{r.name}</td>
-                        <td style={{ padding: 8 }}>₹{r.totalExp}</td>
-                        <td style={{ padding: 8, color: '#16a34a', fontWeight: 700 }}>₹{r.totalPaid}</td>
-                        <td style={{ padding: 8, color: r.pending > 0 ? '#dc2626' : '#16a34a', fontWeight: 700 }}>₹{r.pending}</td>
-                      </tr>
-                    ))}
+                    {students.map(s => {
+                      const amt = Number(amountMap[s.adm_no]) || 0;
+                      const pSet = paidMap[s.adm_no] || new Set();
+                      const tot = amt * pSet.size;
+                      return (
+                        <tr key={s.adm_no}>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'center' }}>{s.adm_no}</td>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 700 }}>{s.name}</td>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'right' }}>₹{amt}</td>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'center' }}>{pSet.size} / 12</td>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'right', fontWeight: 800, color: '#16a34a' }}>₹{tot}</td>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'center', fontWeight: 700 }}>{getLastPaidMonth(pSet)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-              <button onClick={downloadCSV} style={{ width: '100%', marginTop: 12, padding: 11, borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <Download size={16} /> Download Excel (CSV)
-              </button>
-            </div>
+
+              <ExportBar
+                onPDF={() => downloadPDF('nhia-admin-class-finance', `Finance_Report_${selectedClass}.pdf`, true)}
+                onJPEG={() => downloadJPEG('nhia-admin-class-finance', `Finance_Report_${selectedClass}.jpg`)}
+                onExcel={() => downloadCSV(
+                  `Finance_Report_${selectedClass}.csv`,
+                  ['Adm No', 'Name', 'Monthly Amount', 'Months Paid', 'Total Collected', 'Last Paid Month'],
+                  students.map(s => {
+                    const amt = Number(amountMap[s.adm_no]) || 0;
+                    const pSet = paidMap[s.adm_no] || new Set();
+                    return [s.adm_no, s.name, amt, pSet.size, amt * pSet.size, getLastPaidMonth(pSet)];
+                  })
+                )}
+              />
+            </>
+          )}
+
+          {/* Campus-wide Summary */}
+          <button
+            onClick={generateCampusSummary}
+            disabled={loading}
+            style={{ width: '100%', padding: 13, borderRadius: 12, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 800, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 6 }}
+          >
+            <Wallet size={15} /> {loading ? 'Generating...' : 'Generate Campus-Wide Financial Summary'}
+          </button>
+
+          {campusReport && (
+            <>
+              <div id="nhia-campus-finance" style={{ background: '#fff', borderRadius: 14, border: '1px solid #cbd5e1', padding: 14 }}>
+                <div style={{ textAlign: 'center', marginBottom: 10, borderBottom: '2px solid #1e293b', paddingBottom: 6 }}>
+                  <div style={{ fontSize: 14, fontWeight: 900 }}>CAMPUS FINANCIAL SUMMARY ({ACADEMIC_YEAR})</div>
+                </div>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead style={{ background: '#f8fafc' }}>
+                    <tr>
+                      <th style={{ padding: 7, border: '1px solid #cbd5e1', textAlign: 'left' }}>Class</th>
+                      <th style={{ padding: 7, border: '1px solid #cbd5e1' }}>Students</th>
+                      <th style={{ padding: 7, border: '1px solid #cbd5e1', textAlign: 'right' }}>Monthly Target</th>
+                      <th style={{ padding: 7, border: '1px solid #cbd5e1', textAlign: 'right' }}>Total Collected</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {campusReport.rows.map(r => (
+                      <tr key={r.className}>
+                        <td style={{ padding: 7, border: '1px solid #cbd5e1', fontWeight: 700 }}>{r.className}</td>
+                        <td style={{ padding: 7, border: '1px solid #cbd5e1', textAlign: 'center' }}>{r.students}</td>
+                        <td style={{ padding: 7, border: '1px solid #cbd5e1', textAlign: 'right' }}>₹{r.monthlyTarget}</td>
+                        <td style={{ padding: 7, border: '1px solid #cbd5e1', textAlign: 'right', fontWeight: 800, color: '#16a34a' }}>₹{r.totalCollected}</td>
+                      </tr>
+                    ))}
+                    <tr style={{ background: '#eef2ff', fontWeight: 800 }}>
+                      <td colSpan={2} style={{ padding: 8, border: '1px solid #cbd5e1' }}>GRAND TOTAL</td>
+                      <td style={{ padding: 8, border: '1px solid #cbd5e1', textAlign: 'right' }}>₹{campusReport.grandTarget}</td>
+                      <td style={{ padding: 8, border: '1px solid #cbd5e1', textAlign: 'right', color: '#2e44d2' }}>₹{campusReport.grandCollected}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <ExportBar
+                onPDF={() => downloadPDF('nhia-campus-finance', `Campus_Finance_Summary_${ACADEMIC_YEAR}.pdf`)}
+                onJPEG={() => downloadJPEG('nhia-campus-finance', `Campus_Finance_Summary_${ACADEMIC_YEAR}.jpg`)}
+                onExcel={() => downloadCSV(
+                  `Campus_Finance_Summary_${ACADEMIC_YEAR}.csv`,
+                  ['Class', 'Students', 'Monthly Target', 'Total Collected'],
+                  campusReport.rows.map(r => [r.className, r.students, r.monthlyTarget, r.totalCollected])
+                )}
+              />
+            </>
           )}
         </div>
       )}
