@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
   Briefcase, Bell, BarChart3, Sliders, Home, User, ChevronLeft,
   LogOut, Building, Library
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
-import ProfileAvatar from './components/ProfileAvatar';
 import StudentsModule from './modules/StudentsModule';
 import ExamsModule from './modules/ExamsModule';
 import AttendanceModule from './modules/AttendanceModule';
@@ -88,6 +87,10 @@ export default function App() {
   const [academicYear, setAcademicYear] = useState('2026–27');
   const [resetting, setResetting] = useState(false);
 
+  // Academy Logo State
+  const [academyLogo, setAcademyLogo] = useState(null);
+  const logoInputRef = useRef(null);
+
   // Login State
   const [loginMode, setLoginMode] = useState('staff');
   const [loginId, setLoginId] = useState('');
@@ -115,8 +118,44 @@ export default function App() {
         .eq('key', 'academic_year')
         .maybeSingle();
       if (yrData?.value) setAcademicYear(yrData.value);
+
+      const { data: logoData } = await supabase
+        .from('user_avatars')
+        .select('avatar_data')
+        .eq('user_key', 'academy_logo')
+        .maybeSingle();
+      if (logoData?.avatar_data) setAcademyLogo(logoData.avatar_data);
     })();
   }, []);
+
+  function handleLogoUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const dim = 160;
+        canvas.width = dim;
+        canvas.height = dim;
+        const ctx = canvas.getContext('2d');
+        const minSide = Math.min(img.width, img.height);
+        const sx = (img.width - minSide) / 2;
+        const sy = (img.height - minSide) / 2;
+        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, dim, dim);
+
+        const compressed = canvas.toDataURL('image/png');
+        setAcademyLogo(compressed);
+
+        await supabase
+          .from('user_avatars')
+          .upsert({ user_key: 'academy_logo', avatar_data: compressed }, { onConflict: 'user_key' });
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -210,13 +249,19 @@ export default function App() {
     }
   }
 
-  // LOGIN SCREEN (With Phone Save Password Support)
+  // LOGIN SCREEN
   if (!user) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <div style={{ width: '100%', maxWidth: 400, background: '#fff', borderRadius: 20, padding: 28, boxShadow: '0 10px 30px rgba(37,99,235,0.08)', border: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#2e44d2', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 16 }}>NH</div>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#2e44d2', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 16, overflow: 'hidden', flexShrink: 0 }}>
+              {academyLogo ? (
+                <img src={academyLogo} alt="NH" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                'NH'
+              )}
+            </div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 17, color: '#0f172a' }}>Noorul Hidaya</div>
               <div style={{ fontSize: 12, color: '#64748b' }}>Islamic Academy • Campus ERP</div>
@@ -282,10 +327,33 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 80, maxWidth: 520, margin: '0 auto', background: '#f4f6fc' }}>
-      {/* TOP HEADER */}
+      {/* TOP HEADER WITH CLICKABLE ACADEMY LOGO (ADMIN CAN CHANGE) */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', background: '#f4f6fc', position: 'sticky', top: 0, zIndex: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 38, height: 38, borderRadius: 10, background: '#2e44d2', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14 }}>NH</div>
+          <div
+            onClick={() => user.role === 'admin' && logoInputRef.current?.click()}
+            title={user.role === 'admin' ? 'Click to change Academy Logo' : 'Noorul Hidaya'}
+            style={{
+              width: 38, height: 38, borderRadius: 10, background: '#2e44d2', color: '#fff',
+              display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14,
+              overflow: 'hidden', cursor: user.role === 'admin' ? 'pointer' : 'default', flexShrink: 0
+            }}
+          >
+            {academyLogo ? (
+              <img src={academyLogo} alt="NH" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              'NH'
+            )}
+          </div>
+          {user.role === 'admin' && (
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleLogoUpload}
+              style={{ display: 'none' }}
+            />
+          )}
           <div>
             <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a', lineHeight: 1.2 }}>Noorul Hidaya</div>
             <div style={{ fontSize: 12, color: '#64748b' }}>Islamic Academy</div>
@@ -441,16 +509,10 @@ export default function App() {
             </div>
           </div>
         ) : activeTab === 'account' ? (
-          /* ACCOUNT VIEW WITH DP */
           <div style={{ background: '#fff', padding: 22, borderRadius: 18, border: '1px solid #e2e8f0' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-              <ProfileAvatar user={user} size={64} />
-              <div>
-                <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>{user.name}</h3>
-                <div style={{ fontSize: 13, color: '#64748b', textTransform: 'capitalize', marginTop: 2 }}>{currentRole}</div>
-                <div style={{ fontSize: 11, color: '#2e44d2', marginTop: 4 }}>Tap photo to change DP</div>
-              </div>
-            </div>
+            <h3 style={{ marginBottom: 12 }}>My Account</h3>
+            <p style={{ fontSize: 14, color: '#475569', marginBottom: 6 }}><b>Name:</b> {user.name}</p>
+            <p style={{ fontSize: 14, color: '#475569', marginBottom: 18 }}><b>Role:</b> {currentRole}</p>
             <button
               onClick={async () => { if (isSupabaseConfigured) await supabase.auth.signOut(); setUser(null); setActiveTab('home'); }}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: 12, borderRadius: 12, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
@@ -464,15 +526,12 @@ export default function App() {
             <p style={{ fontSize: 13, color: '#64748b' }}>പ്രത്യേക അറിയിപ്പുകൾ ഇവിടെ കാണാം.</p>
           </div>
         ) : (
-          /* HOME SCREEN WITH DP IN BANNER */
+          /* HOME SCREEN (CLEAN BANNER WITHOUT DP) */
           <>
-            <div style={{ background: '#2e44d2', color: '#fff', borderRadius: 18, padding: '20px', marginBottom: 14, boxShadow: '0 8px 20px rgba(46,68,210,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-              <div>
-                <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>Welcome</div>
-                <div style={{ fontSize: 21, fontWeight: 800, marginBottom: 6 }}>{user.name}</div>
-                <div style={{ fontSize: 13, opacity: 0.9 }}>Academic Year {academicYear}</div>
-              </div>
-              <ProfileAvatar user={user} size={56} />
+            <div style={{ background: '#2e44d2', color: '#fff', borderRadius: 18, padding: '22px 20px', marginBottom: 14, boxShadow: '0 8px 20px rgba(46,68,210,0.2)' }}>
+              <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>Welcome</div>
+              <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>{user.name}</div>
+              <div style={{ fontSize: 13, opacity: 0.9 }}>Academic Year {academicYear}</div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
