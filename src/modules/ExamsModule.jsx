@@ -41,18 +41,31 @@ export default function ExamsModule({ onBack, user }) {
   }
 
   async function loadAssignments() {
-    let query = supabase.from('teacher_assignments').select('*').order('class_name');
-    if (!isAdmin) {
-      if (user?.id && user?.name) {
-        query = query.or(`staff_id.eq.${user.id},staff_name.eq.${user.name}`);
-      } else if (user?.id) {
-        query = query.eq('staff_id', String(user.id));
-      } else if (user?.name) {
-        query = query.eq('staff_name', user.name);
-      }
+    const { data, error } = await supabase
+      .from('teacher_assignments')
+      .select('*')
+      .order('class_name');
+
+    if (error || !data) {
+      setAssignments([]);
+      return;
     }
-    const { data } = await query;
-    setAssignments(data || []);
+
+    if (isAdmin) {
+      setAssignments(data);
+      return;
+    }
+
+    const uId = String(user?.staff_id || user?.id || '').trim().toLowerCase();
+    const uName = String(user?.name || '').trim().toLowerCase();
+
+    const filtered = data.filter(a => {
+      const aId = String(a.staff_id || '').trim().toLowerCase();
+      const aName = String(a.staff_name || '').trim().toLowerCase();
+      return (uId && aId === uId) || (uName && aName === uName);
+    });
+
+    setAssignments(filtered);
   }
 
   // ഡ്രോപ്പ്ഡൗണിൽ നിന്ന് Assigned Module സെലക്ട് ചെയ്യുമ്പോൾ
