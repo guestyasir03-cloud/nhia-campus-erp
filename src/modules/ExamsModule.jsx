@@ -15,7 +15,6 @@ export default function ExamsModule({ onBack, user }) {
   const [marksMap, setMarksMap] = useState({});
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
-  const [debugInfo, setDebugInfo] = useState('');
 
   // Class Report State
   const [reportData, setReportData] = useState(null);
@@ -47,29 +46,25 @@ export default function ExamsModule({ onBack, user }) {
       .select('*')
       .order('class_name');
 
-    if (error) {
-      setDebugInfo(`DB Error: ${error.message}`);
+    if (error || !data) {
       setAssignments([]);
       return;
     }
 
-    const allRows = data || [];
-    const uId = String(user?.staff_id || user?.id || '').trim().toLowerCase();
-    const uName = String(user?.name || '').trim().toLowerCase();
-
     if (isAdmin) {
-      setDebugInfo(`Admin | Total Rows: ${allRows.length}`);
-      setAssignments(allRows);
+      setAssignments(data);
       return;
     }
 
-    const filtered = allRows.filter(a => {
+    const uId = String(user?.staff_id || user?.id || '').trim().toLowerCase();
+    const uName = String(user?.name || '').trim().toLowerCase();
+
+    const filtered = data.filter(a => {
       const aId = String(a.staff_id || '').trim().toLowerCase();
       const aName = String(a.staff_name || '').trim().toLowerCase();
       return (uId && aId === uId) || (uName && aName === uName);
     });
 
-    setDebugInfo(`User: [${uId} / ${uName}] | Total in DB: ${allRows.length} | Matched: ${filtered.length}`);
     setAssignments(filtered);
   }
 
@@ -330,11 +325,6 @@ export default function ExamsModule({ onBack, user }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <label style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>Select Assigned Module:</label>
-            {debugInfo && (
-              <div style={{ fontSize: 11, color: '#dc2626', background: '#fef2f2', padding: 6, borderRadius: 6 }}>
-                {debugInfo}
-              </div>
-            )}
             {assignments.length > 0 ? (
               <select
                 value={selectedAssignment}
