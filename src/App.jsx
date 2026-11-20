@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
   Briefcase, Bell, BarChart3, Sliders, Home, User, ChevronLeft,
-  LogOut, Building, Library
+  LogOut, Building, Library, Plus, X
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
 import StudentsModule from './modules/StudentsModule';
@@ -21,6 +21,8 @@ const ICON_MAP = {
   Briefcase, Bell, BarChart3, Sliders, Library, Building
 };
 
+const DEFAULT_ROLES = ['admin', 'coordinator', 'teacher', 'student'];
+
 const DEFAULT_MODULES = [
   { id: 'examinations', name: 'Examinations', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'attendance', name: 'Attendance', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
@@ -28,7 +30,7 @@ const DEFAULT_MODULES = [
   { id: 'finance', name: 'Finance', icon: 'Wallet', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'activity', name: 'Activity Points', icon: 'Star', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'syllabus', name: 'Syllabus', icon: 'BookOpen', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'appraisal', name: 'Staff Appraisal', icon: 'Award', visible_roles: ['admin', 'coordinator', 'teacher', 'appraisal_authority'], is_active: true },
+  { id: 'appraisal', name: 'Staff Appraisal', icon: 'Award', visible_roles: ['admin', 'coordinator', 'teacher'], is_active: true },
   { id: 'staff', name: 'Staff', icon: 'Briefcase', visible_roles: ['admin', 'coordinator'], is_active: true },
   { id: 'announcements', name: 'Announcements', icon: 'Bell', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'reports', name: 'Reports', icon: 'BarChart3', visible_roles: ['admin', 'coordinator'], is_active: true },
@@ -38,42 +40,11 @@ const DEFAULT_MODULES = [
 ];
 
 const SUB_MENUS = {
-  examinations: [
-    'Mark entry (W1–W4)',
-    'Hifz / Midterm entry',
-    'Class reports',
-    'Campus performance',
-    'Pending mark entry',
-    'Grade cards (PDF)'
-  ],
-  attendance: [
-    'Monthly register',
-    'Class-wise attendance',
-    'Attendance percentage',
-    'Pending alerts',
-    'Campus analysis'
-  ],
-  students: [
-    'Student directory',
-    'Add student',
-    'Admission numbers',
-    'Student profile',
-    'Bulk import'
-  ],
-  finance: [
-    'Student ledger',
-    'Class ledger',
-    'Donation entry',
-    'Monthly collection (Apr–Mar)',
-    'Financial reports'
-  ],
-  activity: [
-    'Single entry',
-    'Class-wise bulk entry',
-    'Reasons and categories',
-    'Class ranking',
-    'Discipline report'
-  ]
+  examinations: ['Mark entry (W1–W4)', 'Hifz / Midterm entry', 'Class reports', 'Campus performance', 'Pending mark entry', 'Grade cards (PDF)'],
+  attendance: ['Monthly register', 'Class-wise attendance', 'Attendance percentage', 'Pending alerts', 'Campus analysis'],
+  students: ['Student directory', 'Add student', 'Admission numbers', 'Student profile', 'Bulk import'],
+  finance: ['Student ledger', 'Class ledger', 'Donation entry', 'Monthly collection (Apr–Mar)', 'Financial reports'],
+  activity: ['Single entry', 'Class-wise bulk entry', 'Reasons and categories', 'Class ranking', 'Discipline report']
 };
 
 export default function App() {
@@ -82,6 +53,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [activeModule, setActiveModule] = useState(null);
   const [modules, setModules] = useState(DEFAULT_MODULES);
+  const [roles, setRoles] = useState(DEFAULT_ROLES);
+  const [newRoleName, setNewRoleName] = useState('');
   const [stats, setStats] = useState({ students: 0, staff: 0, attendance: '94%' });
   const [newModName, setNewModName] = useState('');
   const [academicYear, setAcademicYear] = useState('2026–27');
@@ -101,29 +74,37 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     (async () => {
-      const { data: modData } = await supabase.from('portal_modules').select('*').order('sort_order');
-      if (modData && modData.length > 0) setModules(modData);
+      const [
+        { data: modData },
+        { count: stCount },
+        { count: sfCount },
+        { data: settingsData },
+        { data: logoData }
+      ] = await Promise.all([
+        supabase.from('portal_modules').select('*').order('sort_order'),
+        supabase.from('students').select('*', { count: 'exact', head: true }),
+        supabase.from('staff').select('*', { count: 'exact', head: true }),
+        supabase.from('app_settings').select('key, value').in('key', ['academic_year', 'portal_roles']),
+        supabase.from('user_avatars').select('avatar_data').eq('user_key', 'academy_logo').maybeSingle()
+      ]);
 
-      const { count: stCount } = await supabase.from('students').select('*', { count: 'exact', head: true });
-      const { count: sfCount } = await supabase.from('staff').select('*', { count: 'exact', head: true });
+      if (modData && modData.length > 0) setModules(modData);
       setStats(prev => ({
         ...prev,
         students: stCount || prev.students,
         staff: sfCount || prev.staff
       }));
 
-      const { data: yrData } = await supabase
-        .from('app_settings')
-        .select('value')
-        .eq('key', 'academic_year')
-        .maybeSingle();
-      if (yrData?.value) setAcademicYear(yrData.value);
+      (settingsData || []).forEach(s => {
+        if (s.key === 'academic_year' && s.value) setAcademicYear(s.value);
+        if (s.key === 'portal_roles' && s.value) {
+          try {
+            const parsed = JSON.parse(s.value);
+            if (Array.isArray(parsed) && parsed.length > 0) setRoles(parsed);
+          } catch {}
+        }
+      });
 
-      const { data: logoData } = await supabase
-        .from('user_avatars')
-        .select('avatar_data')
-        .eq('user_key', 'academy_logo')
-        .maybeSingle();
       if (logoData?.avatar_data) setAcademyLogo(logoData.avatar_data);
     })();
   }, []);
@@ -171,7 +152,7 @@ export default function App() {
           .eq('pin', loginPass.trim())
           .maybeSingle();
         if (error || !staff) throw new Error('Staff ID-യോ PIN-ഓ തെറ്റാണ്!');
-        const role = staff.role || 'teacher';
+        const role = (staff.role || 'teacher').toLowerCase();
         setUser({ id: staff.staff_id, name: staff.name, role, type: 'staff' });
         setRolePreview(role);
       } else {
@@ -192,14 +173,50 @@ export default function App() {
     }
   }
 
-  async function toggleModule(mod) {
-    if (mod.id === 'settings') {
-      return alert('Settings module cannot be disabled.');
-    }
-    const updated = modules.map(m => m.id === mod.id ? { ...m, is_active: !m.is_active } : m);
-    setModules(updated);
+  // Optimistic toggle for module ON/OFF
+  function toggleModule(mod) {
+    if (mod.id === 'settings') return alert('Settings module cannot be disabled.');
+    const nextActive = !mod.is_active;
+    setModules(prev => prev.map(m => m.id === mod.id ? { ...m, is_active: nextActive } : m));
     if (isSupabaseConfigured) {
-      await supabase.from('portal_modules').update({ is_active: !mod.is_active }).eq('id', mod.id);
+      supabase.from('portal_modules').update({ is_active: nextActive }).eq('id', mod.id).then();
+    }
+  }
+
+  // Optimistic toggle for Role/Category visibility per module (Zero Lag)
+  function toggleModuleRole(mod, roleKey) {
+    if (mod.id === 'settings' && roleKey === 'admin') return;
+    const current = Array.isArray(mod.visible_roles) ? mod.visible_roles : [];
+    const updatedRoles = current.includes(roleKey)
+      ? current.filter(r => r !== roleKey)
+      : [...current, roleKey];
+
+    setModules(prev => prev.map(m => m.id === mod.id ? { ...m, visible_roles: updatedRoles } : m));
+    if (isSupabaseConfigured) {
+      supabase.from('portal_modules').update({ visible_roles: updatedRoles }).eq('id', mod.id).then();
+    }
+  }
+
+  // Add new Category/Role (e.g. warden, accountant, librarian)
+  function addNewRole(e) {
+    e.preventDefault();
+    const clean = newRoleName.trim().toLowerCase().replace(/\s+/g, '_');
+    if (!clean || roles.includes(clean)) return;
+    const nextRoles = [...roles, clean];
+    setRoles(nextRoles);
+    setNewRoleName('');
+    if (isSupabaseConfigured) {
+      supabase.from('app_settings').upsert({ key: 'portal_roles', value: JSON.stringify(nextRoles) }).then();
+    }
+  }
+
+  function removeCustomRole(roleKey) {
+    if (DEFAULT_ROLES.includes(roleKey)) return;
+    const nextRoles = roles.filter(r => r !== roleKey);
+    setRoles(nextRoles);
+    if (rolePreview === roleKey) setRolePreview('admin');
+    if (isSupabaseConfigured) {
+      supabase.from('app_settings').upsert({ key: 'portal_roles', value: JSON.stringify(nextRoles) }).then();
     }
   }
 
@@ -215,7 +232,7 @@ export default function App() {
       is_active: true,
       sort_order: modules.length + 1
     };
-    setModules([...modules, newMod]);
+    setModules(prev => [...prev, newMod]);
     setNewModName('');
     if (isSupabaseConfigured) {
       await supabase.from('portal_modules').insert(newMod);
@@ -249,6 +266,8 @@ export default function App() {
     }
   }
 
+  const formatRoleLabel = r => r.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
   // LOGIN SCREEN
   if (!user) {
     return (
@@ -256,11 +275,7 @@ export default function App() {
         <div style={{ width: '100%', maxWidth: 400, background: '#fff', borderRadius: 20, padding: 28, boxShadow: '0 10px 30px rgba(37,99,235,0.08)', border: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
             <div style={{ width: 44, height: 44, borderRadius: 12, background: '#2e44d2', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 16, overflow: 'hidden', flexShrink: 0 }}>
-              {academyLogo ? (
-                <img src={academyLogo} alt="NH" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              ) : (
-                'NH'
-              )}
+              {academyLogo ? <img src={academyLogo} alt="NH" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'NH'}
             </div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 17, color: '#0f172a' }}>Noorul Hidaya</div>
@@ -327,7 +342,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 80, maxWidth: 520, margin: '0 auto', background: '#f4f6fc' }}>
-      {/* TOP HEADER WITH CLICKABLE ACADEMY LOGO (ADMIN CAN CHANGE) */}
+      {/* TOP HEADER */}
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', background: '#f4f6fc', position: 'sticky', top: 0, zIndex: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div
@@ -339,20 +354,10 @@ export default function App() {
               overflow: 'hidden', cursor: user.role === 'admin' ? 'pointer' : 'default', flexShrink: 0
             }}
           >
-            {academyLogo ? (
-              <img src={academyLogo} alt="NH" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              'NH'
-            )}
+            {academyLogo ? <img src={academyLogo} alt="NH" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'NH'}
           </div>
           {user.role === 'admin' && (
-            <input
-              ref={logoInputRef}
-              type="file"
-              accept="image/*"
-              onChange={handleLogoUpload}
-              style={{ display: 'none' }}
-            />
+            <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
           )}
           <div>
             <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a', lineHeight: 1.2 }}>Noorul Hidaya</div>
@@ -366,13 +371,13 @@ export default function App() {
             onChange={e => { setRolePreview(e.target.value); setActiveModule(null); }}
             style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, fontWeight: 600, color: '#1e293b' }}
           >
-            <option value="admin">Super Admin</option>
-            <option value="teacher">Teacher</option>
-            <option value="student">Student</option>
+            {roles.map(r => (
+              <option key={r} value={r}>{r === 'admin' ? 'Super Admin' : formatRoleLabel(r)}</option>
+            ))}
           </select>
         ) : (
           <span style={{ padding: '6px 12px', borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600, textTransform: 'capitalize' }}>
-            {user.role}
+            {formatRoleLabel(user.role)}
           </span>
         )}
       </header>
@@ -407,14 +412,11 @@ export default function App() {
               <h2 style={{ fontSize: 20, fontWeight: 800 }}>Settings</h2>
             </div>
 
-            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 18 }}>
+            {/* ACADEMIC YEAR & RESET */}
+            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Academic Year & Reset</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <select
-                  value={academicYear}
-                  onChange={e => handleYearChange(e.target.value)}
-                  style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600 }}
-                >
+                <select value={academicYear} onChange={e => handleYearChange(e.target.value)} style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600 }}>
                   <option value="2025–26">2025–26</option>
                   <option value="2026–27">2026–27</option>
                   <option value="2027–28">2027–28</option>
@@ -422,45 +424,92 @@ export default function App() {
                   <option value="2029–30">2029–30</option>
                 </select>
               </div>
-              <button
-                onClick={handleYearReset}
-                disabled={resetting}
-                style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
-              >
+              <button onClick={handleYearReset} disabled={resetting} style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
                 {resetting ? 'Resetting data...' : 'Reset Old Year Data (New Year Start)'}
               </button>
             </div>
 
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Module manager</div>
+            {/* USER CATEGORIES / ROLES MANAGER */}
+            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>User Categories (Roles)</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {roles.map(r => (
+                  <span key={r} style={{ fontSize: 12, fontWeight: 600, background: '#eef2ff', color: '#2e44d2', padding: '5px 10px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {formatRoleLabel(r)}
+                    {!DEFAULT_ROLES.includes(r) && (
+                      <X size={13} style={{ cursor: 'pointer', color: '#dc2626' }} onClick={() => removeCustomRole(r)} />
+                    )}
+                  </span>
+                ))}
+              </div>
+              <form onSubmit={addNewRole} style={{ display: 'flex', gap: 8 }}>
+                <input
+                  value={newRoleName}
+                  onChange={e => setNewRoleName(e.target.value)}
+                  placeholder="Add category (e.g. Warden, Accountant)"
+                  style={{ flex: 1, padding: '9px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13 }}
+                />
+                <button type="submit" style={{ padding: '0 14px', borderRadius: 10, border: 'none', background: '#1e293b', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <Plus size={14} /> Add
+                </button>
+              </form>
+            </div>
+
+            {/* MODULE MANAGER WITH ROLE CHIPS */}
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Module Manager & Access</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {modules.map(mod => {
                 const Icon = ICON_MAP[mod.icon] || Sliders;
+                const activeRoles = Array.isArray(mod.visible_roles) ? mod.visible_roles : [];
                 return (
-                  <div key={mod.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff', padding: '12px 16px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 38, height: 38, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center' }}>
-                        <Icon size={18} />
-                      </div>
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{mod.name}</div>
-                        <div style={{ fontSize: 11, color: '#64748b' }}>
-                          {mod.is_active ? `Visible to ${mod.visible_roles?.length || 1} roles` : 'Future module'}
+                  <div key={mod.id} style={{ background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center' }}>
+                          <Icon size={17} />
                         </div>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>{mod.name}</div>
                       </div>
+                      <button
+                        onClick={() => toggleModule(mod)}
+                        style={{
+                          width: 44, height: 24, borderRadius: 20, border: 'none', cursor: 'pointer', position: 'relative',
+                          background: mod.is_active ? '#2e44d2' : '#cbd5e1', transition: '0.2s',
+                          opacity: mod.id === 'settings' ? 0.5 : 1
+                        }}
+                      >
+                        <span style={{
+                          position: 'absolute', top: 3, left: mod.is_active ? 23 : 3,
+                          width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: '0.2s'
+                        }} />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => toggleModule(mod)}
-                      style={{
-                        width: 44, height: 24, borderRadius: 20, border: 'none', cursor: 'pointer', position: 'relative',
-                        background: mod.is_active ? '#2e44d2' : '#cbd5e1', transition: '0.2s',
-                        opacity: mod.id === 'settings' ? 0.5 : 1
-                      }}
-                    >
-                      <span style={{
-                        position: 'absolute', top: 3, left: mod.is_active ? 23 : 3,
-                        width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: '0.2s'
-                      }} />
-                    </button>
+
+                    {/* ROLE ACCESS CHIPS */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {roles.map(r => {
+                        const enabled = activeRoles.includes(r);
+                        return (
+                          <button
+                            key={r}
+                            type="button"
+                            onClick={() => toggleModuleRole(mod, r)}
+                            style={{
+                              padding: '4px 10px',
+                              borderRadius: 8,
+                              fontSize: 11,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              border: enabled ? '1px solid #2e44d2' : '1px solid #e2e8f0',
+                              background: enabled ? '#2e44d2' : '#f8fafc',
+                              color: enabled ? '#fff' : '#64748b'
+                            }}
+                          >
+                            {formatRoleLabel(r)}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })}
@@ -512,7 +561,7 @@ export default function App() {
           <div style={{ background: '#fff', padding: 22, borderRadius: 18, border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginBottom: 12 }}>My Account</h3>
             <p style={{ fontSize: 14, color: '#475569', marginBottom: 6 }}><b>Name:</b> {user.name}</p>
-            <p style={{ fontSize: 14, color: '#475569', marginBottom: 18 }}><b>Role:</b> {currentRole}</p>
+            <p style={{ fontSize: 14, color: '#475569', marginBottom: 18 }}><b>Role:</b> {formatRoleLabel(currentRole)}</p>
             <button
               onClick={async () => { if (isSupabaseConfigured) await supabase.auth.signOut(); setUser(null); setActiveTab('home'); }}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: 12, borderRadius: 12, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
@@ -526,7 +575,7 @@ export default function App() {
             <p style={{ fontSize: 13, color: '#64748b' }}>പ്രത്യേക അറിയിപ്പുകൾ ഇവിടെ കാണാം.</p>
           </div>
         ) : (
-          /* HOME SCREEN (CLEAN BANNER WITHOUT DP) */
+          /* HOME SCREEN */
           <>
             <div style={{ background: '#2e44d2', color: '#fff', borderRadius: 18, padding: '22px 20px', marginBottom: 14, boxShadow: '0 8px 20px rgba(46,68,210,0.2)' }}>
               <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>Welcome</div>
