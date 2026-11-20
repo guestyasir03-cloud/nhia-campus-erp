@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase';
 
 export default function ExamsModule({ onBack, user }) {
   const isAdmin = ['admin', 'coordinator'].includes(user?.role);
-  const [view, setView] = useState(user?.role === 'student' ? 'gradecard' : 'menu'); // menu | entry | report | gradecard
+  const [view, setView] = useState(user?.role === 'student' ? 'gradecard' : 'menu');
   const [classes, setClasses] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [selectedAssignment, setSelectedAssignment] = useState('');
@@ -72,19 +72,7 @@ export default function ExamsModule({ onBack, user }) {
     setDebugInfo(`User: [${uId} / ${uName}] | Total in DB: ${allRows.length} | Matched: ${filtered.length}`);
     setAssignments(filtered);
   }
-    const uId = String(user?.staff_id || user?.id || '').trim().toLowerCase();
-    const uName = String(user?.name || '').trim().toLowerCase();
 
-    const filtered = data.filter(a => {
-      const aId = String(a.staff_id || '').trim().toLowerCase();
-      const aName = String(a.staff_name || '').trim().toLowerCase();
-      return (uId && aId === uId) || (uName && aName === uName);
-    });
-
-    setAssignments(filtered);
-  }
-
-  // ഡ്രോപ്പ്ഡൗണിൽ നിന്ന് Assigned Module സെലക്ട് ചെയ്യുമ്പോൾ
   function handleAssignmentSelect(val) {
     setSelectedAssignment(val);
     if (!val) {
@@ -101,13 +89,13 @@ export default function ExamsModule({ onBack, user }) {
     }
   }
 
-  // 1. മാർക്ക് എൻട്രിക്കായി ക്ലാസ്സിലെ കുട്ടികളെയും നിലവിലെ മാർക്കുകളും ലോഡ് ചെയ്യുന്നു
   async function loadForEntry(clsParam, subParam) {
     const targetClass = typeof clsParam === 'string' ? clsParam : selectedClass;
     const targetSub = typeof subParam === 'string' ? subParam : subject;
 
     if (!targetClass || !targetSub.trim()) return alert('ക്ലാസ്സും വിഷയവും നൽകുക!');
-    setLoading(true); setMsg('');
+    setLoading(true);
+    setMsg('');
     const cleanSub = targetSub.trim();
 
     const [{ data: stData }, { data: mkData }] = await Promise.all([
@@ -118,7 +106,11 @@ export default function ExamsModule({ onBack, user }) {
     const map = {};
     (mkData || []).forEach(m => {
       map[m.adm_no] = {
-        w1: m.w1 ?? '', w2: m.w2 ?? '', w3: m.w3 ?? '', w4: m.w4 ?? '', total: m.total ?? ''
+        w1: m.w1 ?? '',
+        w2: m.w2 ?? '',
+        w3: m.w3 ?? '',
+        w4: m.w4 ?? '',
+        total: m.total ?? ''
       };
     });
 
@@ -141,7 +133,8 @@ export default function ExamsModule({ onBack, user }) {
   }
 
   async function saveMarks() {
-    setLoading(true); setMsg('');
+    setLoading(true);
+    setMsg('');
     const cleanSub = subject.trim();
     const rows = [];
 
@@ -152,9 +145,17 @@ export default function ExamsModule({ onBack, user }) {
         if (m.total === '') return;
         const tot = Number(m.total) || 0;
         rows.push({
-          adm_no: s.adm_no, class_name: selectedClass, subject: cleanSub,
+          adm_no: s.adm_no,
+          class_name: selectedClass,
+          subject: cleanSub,
           teacher_email: user?.name || 'Admin',
-          w1: tot, w2: null, w3: null, w4: null, total: tot, final_mark: tot, academic_year: '2026-27'
+          w1: tot,
+          w2: null,
+          w3: null,
+          w4: null,
+          total: tot,
+          final_mark: tot,
+          academic_year: '2026-27'
         });
       } else {
         if (m.w1 === '' && m.w2 === '' && m.w3 === '' && m.w4 === '') return;
@@ -165,9 +166,17 @@ export default function ExamsModule({ onBack, user }) {
         const tot = (w1 || 0) + (w2 || 0) + (w3 || 0) + (w4 || 0);
         const finalMark = Number(((tot / 100) * 30).toFixed(2));
         rows.push({
-          adm_no: s.adm_no, class_name: selectedClass, subject: cleanSub,
+          adm_no: s.adm_no,
+          class_name: selectedClass,
+          subject: cleanSub,
           teacher_email: user?.name || 'Admin',
-          w1, w2, w3, w4, total: tot, final_mark: finalMark, academic_year: '2026-27'
+          w1,
+          w2,
+          w3,
+          w4,
+          total: tot,
+          final_mark: finalMark,
+          academic_year: '2026-27'
         });
       }
     });
@@ -183,7 +192,6 @@ export default function ExamsModule({ onBack, user }) {
     else setMsg(`✅ ${rows.length} കുട്ടികളുടെ മാർക്കുകൾ വിജയകരമായി സേവ് ചെയ്തു!`);
   }
 
-  // 2. ക്ലാസ്സ് റിപ്പോർട്ട് ജനറേറ്റ് ചെയ്യുന്നു
   async function generateClassReport() {
     if (!selectedClass) return alert('ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക!');
     setLoading(true);
@@ -211,7 +219,6 @@ export default function ExamsModule({ onBack, user }) {
       return { adm_no: s.adm_no, name: s.name, subMap, finalTotal: Number(finalTotal.toFixed(2)), perc };
     });
 
-    // Rank Calculation
     const sorted = [...rows].sort((a, b) => b.finalTotal - a.finalTotal);
     const rankMap = {};
     sorted.forEach((r, idx) => { rankMap[r.adm_no] = idx + 1; });
@@ -221,11 +228,11 @@ export default function ExamsModule({ onBack, user }) {
     setLoading(false);
   }
 
-  // 3. സ്റ്റുഡന്റ് ഗ്രേഡ് കാർഡ് (PDF)
   async function fetchGradeCard(admNoParam) {
     const targetAdm = (admNoParam || admInput).trim();
     if (!targetAdm) return alert('അഡ്മിഷൻ നമ്പർ നൽകുക!');
-    setLoading(true); setMsg('');
+    setLoading(true);
+    setMsg('');
 
     const [{ data: st }, { data: mk }] = await Promise.all([
       supabase.from('students').select('*').eq('adm_no', targetAdm).maybeSingle(),
@@ -321,10 +328,13 @@ export default function ExamsModule({ onBack, user }) {
       {/* 1. MARK ENTRY */}
       {view === 'entry' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Select Assigned Module Dropdown */}
-          <div style={{ fontSize: 11, color: '#dc2626', background: '#fef2f2', padding: 6, borderRadius: 6 }}>{debugInfo}</div>
           <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <label style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>Select Assigned Module:</label>
+            {debugInfo && (
+              <div style={{ fontSize: 11, color: '#dc2626', background: '#fef2f2', padding: 6, borderRadius: 6 }}>
+                {debugInfo}
+              </div>
+            )}
             {assignments.length > 0 ? (
               <select
                 value={selectedAssignment}
@@ -346,7 +356,6 @@ export default function ExamsModule({ onBack, user }) {
               </div>
             )}
 
-            {/* Admin-നു മാത്രം നേരിട്ട് ഏത് ക്ലാസ്സും വിഷയവും എടുക്കാനുള്ള ഓപ്ഷൻ */}
             {isAdmin && (
               <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: 12, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>OR MANUAL ENTRY (ADMIN)</div>
