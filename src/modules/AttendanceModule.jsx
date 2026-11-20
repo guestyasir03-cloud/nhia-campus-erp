@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
-  ChevronLeft, Calendar, ClipboardCheck, Edit3, Save,
-  Copy, Download, FileSpreadsheet, CheckCircle2, Users
+  ChevronLeft, ClipboardCheck, Edit3, Save,
+  Copy, Download, FileSpreadsheet, UserCheck, Trash2
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
@@ -19,39 +19,109 @@ export default function AttendanceModule({ onBack, user }) {
   const isAdmin = ['admin', 'coordinator'].includes(user?.role);
   const [mainTab, setMainTab] = useState('spot'); // 'spot' | 'monthly'
   const [classes, setClasses] = useState([]);
+  const [staffList, setStaffList] = useState([]);
+  const [classTeachers, setClassTeachers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
-  // ==========================================
-  // SPOT / SESSION ATTENDANCE STATE
-  // ==========================================
+  // Admin Class Teacher Assignment State
+  const [assignClass, setAssignClass] = useState('');
+  const [assignStaff, setAssignStaff] = useState('');
+
+  // Spot Attendance State
   const [spotView, setSpotView] = useState('take'); // 'take' | 'history'
   const [spotDate, setSpotDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [spotSession, setSpotSession] = useState('Friday Register');
   const [customSession, setCustomSession] = useState('');
   const [spotClass, setSpotClass] = useState('');
   const [spotStudents, setSpotStudents] = useState([]);
-  const [spotMap, setSpotMap] = useState({}); // { adm_no: 'P' | 'A' | 'L' }
+  const [spotMap, setSpotMap] = useState({});
   const [historyList, setHistoryList] = useState([]);
 
-  // ==========================================
-  // MONTHLY LEDGER ATTENDANCE STATE
-  // ==========================================
-  const [monthYear, setMonthYear] = useState(() => new Date().toISOString().slice(0, 7)); // YYYY-MM
+  // Monthly Ledger State
+  const [monthYear, setMonthYear] = useState(() => new Date().toISOString().slice(0, 7));
   const [monthlyClass, setMonthlyClass] = useState('');
   const [workingDays, setWorkingDays] = useState('25');
   const [monthlyStudents, setMonthlyStudents] = useState([]);
-  const [monthlyMap, setMonthlyMap] = useState({}); // { adm_no: present_days }
+  const [monthlyMap, setMonthlyMap] = useState({});
 
   useEffect(() => {
-    loadClasses();
+    loadInitialData();
   }, []);
 
-  async function loadClasses() {
-    const { data } = await supabase.from('students').select('class_name');
-    if (data) {
-      setClasses([...new Set(data.map(d => d.class_name).filter(Boolean))].sort());
+  async function loadInitialData() {
+    const [{ data: st }, { data: ta }, { data: ct }] = await Promise.all([
+      supabase.from('students').select('class_name'),
+      supabase.from('teacher_assignments').select('staff_id, staff_name'),
+      supabase.from('class_teachers').select('*').order('class_name')
+    ]);
+
+    if (st) {
+      setClasses([...new Set(st.map(d => d.class_name).filter(Boolean))].sort());
     }
+    if (ta) {
+      const uniqueStaff = [];
+      const seen = new Set();
+      ta.forEach(t => {
+        const key = String(t.staff_name || '').trim().toLowerCase();
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          uniqueStaff.push({ staff_id: t.staff_id || '', staff_name: t.staff_name.trim() });
+        }
+      });
+      uniqueStaff.sort((a, b) => a.staff_name.localeCompare(b.staff_name));
+      setStaffList(uniqueStaff);
+    }
+    if (ct) {
+      setClassTeachers(ct);
+    }
+  }
+
+  // Filter classes allowed for Monthly Ledger
+  const uId = String(user?.staff_id || user?.id || '').trim().toLowerCase();
+  const uName = String(user?.name || '').trim().toLowerCase();
+
+  const myAssignedClasses = isAdmin
+    ? classes
+    : classTeachers
+        .filter(ct => {
+          const ctId = String(ct.staff_id || '').trim().toLowerCase();
+          const ctName = String(ct.staff_name || '').trim().toLowerCase();
+          return (uId && ctId === uId) || (uName && ctName === uName);
+        })
+        .map(ct => ct.class_name);
+
+  // Admin: Assign Class Teacher
+  async function handleAssignClassTeacher() {
+    if (!assignClass || !assignStaff) return alert('Class-um Teacher-um select cheyyuka!');
+    const staffObj = staffList.find(s => s.staff_name === assignStaff);
+    setLoading(true);
+    setMsg('');
+
+    const { error } = await supabase.from('class_teachers').upsert(
+      {
+        class_name: assignClass,
+        staff_id: staffObj?.staff_id || '',
+        staff_name: assignStaff
+      },
+      { onConflict: 'class_name' }
+    );
+
+    setLoading(false);
+    if (error) {
+      setMsg('❌ Error: ' + error.message);
+    } else {
+      setMsg(`✅ ${assignClass} Class Teacher aayi ${assignStaff}-ne assign cheythu!`);
+      setAssignClass('');
+      setAssignStaff('');
+      loadInitialData();
+    }
+  }
+
+  async function removeClassTeacher(clsName) {
+    if (!window.confirm(`${clsName} class teacher assignment remove cheyyano?`)) return;
+    await supabase.from('class_teachers').delete().eq('class_name', clsName);
+    loadInitialData();
   }
 
   const activeSessionName = spotSession === 'Custom...' ? customSession.trim() : spotSession;
@@ -81,7 +151,7 @@ export default function AttendanceModule({ onBack, user }) {
     ]);
 
     const map = {};
-    (stData || []).forEach(s => { map[s.adm_no] = 'P'; }); // Default Present
+    (stData || []).forEach(s => { map[s.adm_no] = 'P'; });
     (attData || []).forEach(a => { map[a.adm_no] = a.status; });
 
     setSpotStudents(stData || []);
@@ -134,7 +204,6 @@ export default function AttendanceModule({ onBack, user }) {
     setLoading(false);
     if (error) return setMsg('❌ Error: ' + error.message);
 
-    // Group by date + session + class
     const grouped = {};
     (data || []).forEach(r => {
       const key = `${r.session_date}__${r.session_name}__${r.class_name}`;
@@ -255,9 +324,7 @@ export default function AttendanceModule({ onBack, user }) {
     else setMsg(`✅ ${rows.length} kuttikalude ${monthYear} monthly attendance save aayi!`);
   }
 
-  // ==========================================
-  // EXPORT HELPERS
-  // ==========================================
+  // Export Helpers
   function downloadCSV(filename, headers, rows) {
     const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -280,7 +347,6 @@ export default function AttendanceModule({ onBack, user }) {
     }).from(el).save();
   }
 
-  // Spot Live Counts
   const pCount = spotStudents.filter(s => spotMap[s.adm_no] === 'P').length;
   const aCount = spotStudents.filter(s => spotMap[s.adm_no] === 'A').length;
   const lCount = spotStudents.filter(s => spotMap[s.adm_no] === 'L').length;
@@ -295,15 +361,14 @@ export default function AttendanceModule({ onBack, user }) {
         <h2 style={{ fontSize: 20, fontWeight: 800 }}>Attendance Portal</h2>
       </div>
 
-      {/* MAIN MODE SWITCHER (2 TYPES OF ATTENDANCE) */}
+      {/* MAIN MODE SWITCHER */}
       <div style={{ display: 'flex', background: '#e2e8f0', padding: 4, borderRadius: 14, marginBottom: 14, gap: 4 }}>
         <button
           onClick={() => { setMainTab('spot'); setMsg(''); }}
           style={{
             flex: 1, padding: '10px 6px', borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer',
             background: mainTab === 'spot' ? '#fff' : 'transparent',
-            color: mainTab === 'spot' ? '#2e44d2' : '#475569',
-            boxShadow: mainTab === 'spot' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+            color: mainTab === 'spot' ? '#2e44d2' : '#475569'
           }}
         >
           ⚡ Spot / Register (All Staff)
@@ -313,8 +378,7 @@ export default function AttendanceModule({ onBack, user }) {
           style={{
             flex: 1, padding: '10px 6px', borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer',
             background: mainTab === 'monthly' ? '#fff' : 'transparent',
-            color: mainTab === 'monthly' ? '#2e44d2' : '#475569',
-            boxShadow: mainTab === 'monthly' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none'
+            color: mainTab === 'monthly' ? '#2e44d2' : '#475569'
           }}
         >
           📒 Monthly Ledger (Class Tr)
@@ -328,29 +392,21 @@ export default function AttendanceModule({ onBack, user }) {
       )}
 
       {/* ================================================= */}
-      {/* TYPE 1: SPOT / SESSION ATTENDANCE (ALL TEACHERS)  */}
+      {/* TYPE 1: SPOT / SESSION ATTENDANCE                 */}
       {/* ================================================= */}
       {mainTab === 'spot' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Take vs Edit/History Buttons */}
           <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              onClick={() => setSpotView('take')}
-              style={{ flex: 1, padding: 11, borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: spotView === 'take' ? '#16a34a' : '#f1f5f9', color: spotView === 'take' ? '#fff' : '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-            >
+            <button onClick={() => setSpotView('take')} style={{ flex: 1, padding: 11, borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: spotView === 'take' ? '#16a34a' : '#f1f5f9', color: spotView === 'take' ? '#fff' : '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               <ClipboardCheck size={15} /> Take Attendance
             </button>
-            <button
-              onClick={() => { setSpotView('history'); loadSpotHistory(); }}
-              style={{ flex: 1, padding: 11, borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: spotView === 'history' ? '#0284c7' : '#f1f5f9', color: spotView === 'history' ? '#fff' : '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-            >
+            <button onClick={() => { setSpotView('history'); loadSpotHistory(); }} style={{ flex: 1, padding: 11, borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: spotView === 'history' ? '#0284c7' : '#f1f5f9', color: spotView === 'history' ? '#fff' : '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
               <Edit3 size={15} /> Edit / History
             </button>
           </div>
 
           {spotView === 'take' ? (
             <>
-              {/* Filter Card */}
               <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <div>
@@ -374,12 +430,7 @@ export default function AttendanceModule({ onBack, user }) {
                 </div>
 
                 {spotSession === 'Custom...' && (
-                  <input
-                    value={customSession}
-                    onChange={e => setCustomSession(e.target.value)}
-                    placeholder="Session peru nalkuka (e.g., Sports, Special Class)"
-                    style={{ padding: 10, borderRadius: 10, border: '1px solid #93c5fd', fontSize: 13 }}
-                  />
+                  <input value={customSession} onChange={e => setCustomSession(e.target.value)} placeholder="Session peru nalkuka..." style={{ padding: 10, borderRadius: 10, border: '1px solid #93c5fd', fontSize: 13 }} />
                 )}
 
                 <button onClick={() => loadSpotStudents()} disabled={loading} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
@@ -387,11 +438,9 @@ export default function AttendanceModule({ onBack, user }) {
                 </button>
               </div>
 
-              {/* Student Marking List */}
               {spotStudents.length > 0 && (
                 <>
-                  {/* Live Summary + Quick Actions */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: 12, border: '1px solid #e2e8f0', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '10px 12px', borderRadius: 12, border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', gap: 10, fontSize: 12, fontWeight: 800 }}>
                       <span style={{ color: '#16a34a' }}>P: {pCount}</span>
                       <span style={{ color: '#dc2626' }}>A: {aCount}</span>
@@ -422,15 +471,7 @@ export default function AttendanceModule({ onBack, user }) {
                               { k: 'A', bg: '#dc2626', light: '#fee2e2', txt: '#dc2626' },
                               { k: 'L', bg: '#d97706', light: '#fef3c7', txt: '#b45309' }
                             ].map(b => (
-                              <button
-                                key={b.k}
-                                onClick={() => setSpotMap(prev => ({ ...prev, [s.adm_no]: b.k }))}
-                                style={{
-                                  width: 34, height: 32, borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 12, cursor: 'pointer',
-                                  background: st === b.k ? b.bg : b.light,
-                                  color: st === b.k ? '#fff' : b.txt
-                                }}
-                              >
+                              <button key={b.k} onClick={() => setSpotMap(prev => ({ ...prev, [s.adm_no]: b.k }))} style={{ width: 34, height: 32, borderRadius: 8, border: 'none', fontWeight: 800, fontSize: 12, cursor: 'pointer', background: st === b.k ? b.bg : b.light, color: st === b.k ? '#fff' : b.txt }}>
                                 {b.k}
                               </button>
                             ))}
@@ -440,7 +481,6 @@ export default function AttendanceModule({ onBack, user }) {
                     })}
                   </div>
 
-                  {/* Save & Action Buttons */}
                   <button onClick={saveSpotAttendance} disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                     <Save size={16} /> {loading ? 'Saving...' : 'SAVE ATTENDANCE'}
                   </button>
@@ -452,14 +492,7 @@ export default function AttendanceModule({ onBack, user }) {
                     <button onClick={() => downloadPDF('nhia-spot-sheet', `${spotClass}_${activeSessionName}_${spotDate}.pdf`)} style={{ padding: 10, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                       <Download size={13} /> PDF
                     </button>
-                    <button
-                      onClick={() => downloadCSV(
-                        `${spotClass}_${activeSessionName}_${spotDate}.csv`,
-                        ['Adm No', 'Student Name', 'Status', 'Date', 'Session'],
-                        spotStudents.map(s => [s.adm_no, s.name, spotMap[s.adm_no] || 'P', spotDate, activeSessionName])
-                      )}
-                      style={{ padding: 10, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
-                    >
+                    <button onClick={() => downloadCSV(`${spotClass}_${activeSessionName}_${spotDate}.csv`, ['Adm No', 'Student Name', 'Status', 'Date', 'Session'], spotStudents.map(s => [s.adm_no, s.name, spotMap[s.adm_no] || 'P', spotDate, activeSessionName]))} style={{ padding: 10, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                       <FileSpreadsheet size={13} /> Excel
                     </button>
                   </div>
@@ -467,7 +500,6 @@ export default function AttendanceModule({ onBack, user }) {
               )}
             </>
           ) : (
-            /* HISTORY & EDIT LIST */
             <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>Recent Attendance Sessions</h4>
               {historyList.length === 0 ? (
@@ -478,21 +510,14 @@ export default function AttendanceModule({ onBack, user }) {
                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc' }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{h.className} — {h.session}</div>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                          📅 {h.date} • By: {h.takenBy}
-                        </div>
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>📅 {h.date} • By: {h.takenBy}</div>
                         <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, display: 'flex', gap: 8 }}>
                           <span style={{ color: '#16a34a' }}>P: {h.P}</span>
                           <span style={{ color: '#dc2626' }}>A: {h.A}</span>
                           <span style={{ color: '#d97706' }}>L: {h.L}</span>
                         </div>
                       </div>
-                      <button
-                        onClick={() => openForEdit(h)}
-                        style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: '#0284c7', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
-                      >
-                        Edit
-                      </button>
+                      <button onClick={() => openForEdit(h)} style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: '#0284c7', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>Edit</button>
                     </div>
                   ))}
                 </div>
@@ -503,116 +528,148 @@ export default function AttendanceModule({ onBack, user }) {
       )}
 
       {/* ================================================= */}
-      {/* TYPE 2: MONTHLY HARD-LEDGER ENTRY (CLASS TEACHER) */}
+      {/* TYPE 2: MONTHLY HARD-LEDGER (CLASS TEACHER ONLY)  */}
       {/* ================================================= */}
       {mainTab === 'monthly' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ fontSize: 12, color: '#475569', background: '#f8fafc', padding: 8, borderRadius: 8 }}>
-              📒 <b>Hard Ledger Monthly Entry:</b> Class teacher oro maasavum total working days-um present days-um enter cheyyaan.
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Month</label>
-                <input type="month" value={monthYear} onChange={e => setMonthYear(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4 }} />
+          {/* ADMIN PANEL: ASSIGN CLASS TEACHERS */}
+          {isAdmin && (
+            <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #c7d2fe', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#2e44d2', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <UserCheck size={16} /> Assign Class Teachers (Admin)
               </div>
-              <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Class</label>
-                <select value={monthlyClass} onChange={e => setMonthlyClass(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4, background: '#fff' }}>
-                  <option value="">-- Select --</option>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 8 }}>
+                <select value={assignClass} onChange={e => setAssignClass(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+                  <option value="">-- Class --</option>
                   {classes.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+                <select value={assignStaff} onChange={e => setAssignStaff(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+                  <option value="">-- Select Teacher --</option>
+                  {staffList.map(s => <option key={s.staff_name} value={s.staff_name}>{s.staff_name}</option>)}
+                </select>
               </div>
-            </div>
-            <button onClick={loadMonthlyStudents} disabled={loading} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-              {loading ? 'Loading...' : 'Load Class Register'}
-            </button>
-          </div>
-
-          {monthlyStudents.length > 0 && (
-            <>
-              <div style={{ background: '#fff', padding: 12, borderRadius: 12, border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Total Working Days ({monthYear}):</span>
-                <input
-                  type="number"
-                  value={workingDays}
-                  onChange={e => setWorkingDays(e.target.value)}
-                  style={{ width: 70, padding: 8, textAlign: 'center', borderRadius: 8, border: '2px solid #2e44d2', fontWeight: 800, fontSize: 14 }}
-                />
-              </div>
-
-              <div id="nhia-monthly-sheet" style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-                <div style={{ padding: '10px 14px', background: '#1e293b', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Monthly Ledger — {monthlyClass} ({monthYear})</span>
-                  <span>Working Days: {workingDays}</span>
-                </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                    <tr>
-                      <th style={{ padding: 9, textAlign: 'left' }}>Student</th>
-                      <th style={{ padding: 9, textAlign: 'center' }}>Present Days</th>
-                      <th style={{ padding: 9, textAlign: 'center' }}>%</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {monthlyStudents.map(s => {
-                      const val = monthlyMap[s.adm_no] ?? '';
-                      const wd = Number(workingDays) || 0;
-                      const perc = val !== '' && wd > 0 ? ((Number(val) / wd) * 100).toFixed(1) : '-';
-                      const isLow = perc !== '-' && Number(perc) < 75;
-                      return (
-                        <tr key={s.adm_no} style={{ borderBottom: '1px solid #f1f5f9', background: isLow ? '#fef2f2' : '#fff' }}>
-                          <td style={{ padding: 9, fontWeight: 600 }}>
-                            {s.name}<div style={{ fontSize: 10, color: '#64748b' }}>{s.adm_no}</div>
-                          </td>
-                          <td style={{ padding: 6, textAlign: 'center' }}>
-                            <input
-                              type="number"
-                              step="0.5"
-                              value={val}
-                              onChange={e => {
-                                if (e.target.value !== '' && Number(e.target.value) > wd) {
-                                  return alert(`Working days (${wd})-il kooduthal nalkaan kazhiyilla!`);
-                                }
-                                setMonthlyMap(prev => ({ ...prev, [s.adm_no]: e.target.value }));
-                              }}
-                              style={{ width: 65, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1', fontWeight: 700 }}
-                            />
-                          </td>
-                          <td style={{ padding: 9, textAlign: 'center', fontWeight: 800, color: isLow ? '#dc2626' : '#16a34a' }}>
-                            {perc === '-' ? '-' : `${perc}%`}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <button onClick={saveMonthlyLedger} disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                <Save size={16} /> {loading ? 'Saving...' : 'SAVE MONTHLY LEDGER'}
+              <button onClick={handleAssignClassTeacher} disabled={loading} style={{ padding: 9, borderRadius: 8, border: 'none', background: '#1e293b', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                Assign Class Teacher
               </button>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <button onClick={() => downloadPDF('nhia-monthly-sheet', `Monthly_Attendance_${monthlyClass}_${monthYear}.pdf`)} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                  <Download size={14} /> Download PDF
-                </button>
-                <button
-                  onClick={() => downloadCSV(
-                    `Monthly_Attendance_${monthlyClass}_${monthYear}.csv`,
-                    ['Adm No', 'Student Name', 'Working Days', 'Present Days', 'Percentage'],
-                    monthlyStudents.map(s => {
-                      const v = monthlyMap[s.adm_no] ?? '';
-                      const wd = Number(workingDays) || 0;
-                      const p = v !== '' && wd > 0 ? `${((Number(v) / wd) * 100).toFixed(1)}%` : '-';
-                      return [s.adm_no, s.name, wd, v, p];
-                    })
-                  )}
-                  style={{ padding: 11, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                >
-                  <FileSpreadsheet size={14} /> Download Excel
+              {classTeachers.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                  {classTeachers.map(ct => (
+                    <span key={ct.id} style={{ fontSize: 11, fontWeight: 700, background: '#eef2ff', color: '#1e3a8a', padding: '4px 8px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      {ct.class_name}: {ct.staff_name}
+                      <Trash2 size={12} style={{ cursor: 'pointer', color: '#dc2626' }} onClick={() => removeClassTeacher(ct.class_name)} />
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* LOCK CHECK FOR NON-CLASS TEACHERS */}
+          {myAssignedClasses.length === 0 ? (
+            <div style={{ background: '#fff', padding: 24, borderRadius: 14, border: '1px solid #fecaca', textAlign: 'center', color: '#dc2626', fontSize: 13, fontWeight: 700 }}>
+              🔒 നിങ്ങൾക്ക് ഇതുവരെ ക്ലാസ്സ് ടീച്ചർ ചുമതല നൽകിയിട്ടില്ല. Monthly Ledger അപ്‌ഡേറ്റ് ചെയ്യാൻ അഡ്മിനുമായി ബന്ധപ്പെടുക.
+            </div>
+          ) : (
+            <>
+              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Month</label>
+                    <input type="month" value={monthYear} onChange={e => setMonthYear(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4 }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Assigned Class</label>
+                    <select value={monthlyClass} onChange={e => setMonthlyClass(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4, background: '#fff' }}>
+                      <option value="">-- Select --</option>
+                      {myAssignedClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <button onClick={loadMonthlyStudents} disabled={loading} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  {loading ? 'Loading...' : 'Load Class Register'}
                 </button>
               </div>
+
+              {monthlyStudents.length > 0 && (
+                <>
+                  <div style={{ background: '#fff', padding: 12, borderRadius: 12, border: '1px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>Total Working Days ({monthYear}):</span>
+                    <input type="number" value={workingDays} onChange={e => setWorkingDays(e.target.value)} style={{ width: 70, padding: 8, textAlign: 'center', borderRadius: 8, border: '2px solid #2e44d2', fontWeight: 800, fontSize: 14 }} />
+                  </div>
+
+                  <div id="nhia-monthly-sheet" style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                    <div style={{ padding: '10px 14px', background: '#1e293b', color: '#fff', fontSize: 12, fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
+                      <span>Monthly Ledger — {monthlyClass} ({monthYear})</span>
+                      <span>Working Days: {workingDays}</span>
+                    </div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <tr>
+                          <th style={{ padding: 9, textAlign: 'left' }}>Student</th>
+                          <th style={{ padding: 9, textAlign: 'center' }}>Present Days</th>
+                          <th style={{ padding: 9, textAlign: 'center' }}>%</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {monthlyStudents.map(s => {
+                          const val = monthlyMap[s.adm_no] ?? '';
+                          const wd = Number(workingDays) || 0;
+                          const perc = val !== '' && wd > 0 ? ((Number(val) / wd) * 100).toFixed(1) : '-';
+                          const isLow = perc !== '-' && Number(perc) < 75;
+                          return (
+                            <tr key={s.adm_no} style={{ borderBottom: '1px solid #f1f5f9', background: isLow ? '#fef2f2' : '#fff' }}>
+                              <td style={{ padding: 9, fontWeight: 600 }}>
+                                {s.name}<div style={{ fontSize: 10, color: '#64748b' }}>{s.adm_no}</div>
+                              </td>
+                              <td style={{ padding: 6, textAlign: 'center' }}>
+                                <input
+                                  type="number"
+                                  step="0.5"
+                                  value={val}
+                                  onChange={e => {
+                                    if (e.target.value !== '' && Number(e.target.value) > wd) return alert(`Working days (${wd})-il kooduthal nalkaan kazhiyilla!`);
+                                    setMonthlyMap(prev => ({ ...prev, [s.adm_no]: e.target.value }));
+                                  }}
+                                  style={{ width: 65, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1', fontWeight: 700 }}
+                                />
+                              </td>
+                              <td style={{ padding: 9, textAlign: 'center', fontWeight: 800, color: isLow ? '#dc2626' : '#16a34a' }}>
+                                {perc === '-' ? '-' : `${perc}%`}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <button onClick={saveMonthlyLedger} disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <Save size={16} /> {loading ? 'Saving...' : 'SAVE MONTHLY LEDGER'}
+                  </button>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <button onClick={() => downloadPDF('nhia-monthly-sheet', `Monthly_Attendance_${monthlyClass}_${monthYear}.pdf`)} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      <Download size={14} /> Download PDF
+                    </button>
+                    <button
+                      onClick={() => downloadCSV(
+                        `Monthly_Attendance_${monthlyClass}_${monthYear}.csv`,
+                        ['Adm No', 'Student Name', 'Working Days', 'Present Days', 'Percentage'],
+                        monthlyStudents.map(s => {
+                          const v = monthlyMap[s.adm_no] ?? '';
+                          const wd = Number(workingDays) || 0;
+                          const p = v !== '' && wd > 0 ? `${((Number(v) / wd) * 100).toFixed(1)}%` : '-';
+                          return [s.adm_no, s.name, wd, v, p];
+                        })
+                      )}
+                      style={{ padding: 11, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    >
+                      <FileSpreadsheet size={14} /> Download Excel
+                    </button>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>
