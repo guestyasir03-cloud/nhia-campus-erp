@@ -4,8 +4,11 @@ import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
 
 export default function ExamsModule({ onBack, user }) {
+  const isAdmin = ['admin', 'coordinator'].includes(user?.role);
   const [view, setView] = useState(user?.role === 'student' ? 'gradecard' : 'menu'); // menu | entry | report | gradecard
   const [classes, setClasses] = useState([]);
+  const [assignments, setAssignments] = useState([]);
+  const [selectedAssignment, setSelectedAssignment] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
   const [subject, setSubject] = useState('');
   const [students, setStudents] = useState([]);
@@ -22,6 +25,9 @@ export default function ExamsModule({ onBack, user }) {
 
   useEffect(() => {
     loadClasses();
+    if (user?.role !== 'student') {
+      loadAssignments();
+    }
     if (user?.role === 'student' && user.id) {
       fetchGradeCard(user.id);
     }
@@ -34,15 +40,50 @@ export default function ExamsModule({ onBack, user }) {
     }
   }
 
+  async function loadAssignments() {
+    let query = supabase.from('teacher_assignments').select('*').order('class_name');
+    if (!isAdmin) {
+      if (user?.id && user?.name) {
+        query = query.or(`staff_id.eq.${user.id},staff_name.eq.${user.name}`);
+      } else if (user?.id) {
+        query = query.eq('staff_id', String(user.id));
+      } else if (user?.name) {
+        query = query.eq('staff_name', user.name);
+      }
+    }
+    const { data } = await query;
+    setAssignments(data || []);
+  }
+
+  // ഡ്രോപ്പ്ഡൗണിൽ നിന്ന് Assigned Module സെലക്ട് ചെയ്യുമ്പോൾ
+  function handleAssignmentSelect(val) {
+    setSelectedAssignment(val);
+    if (!val) {
+      setSelectedClass('');
+      setSubject('');
+      setStudents([]);
+      return;
+    }
+    const found = assignments.find(a => String(a.id) === val);
+    if (found) {
+      setSelectedClass(found.class_name);
+      setSubject(found.subject_name);
+      loadForEntry(found.class_name, found.subject_name);
+    }
+  }
+
   // 1. മാർക്ക് എൻട്രിക്കായി ക്ലാസ്സിലെ കുട്ടികളെയും നിലവിലെ മാർക്കുകളും ലോഡ് ചെയ്യുന്നു
-  async function loadForEntry() {
-    if (!selectedClass || !subject.trim()) return alert('ക്ലാസ്സും വിഷയവും നൽകുക!');
+  async function loadForEntry(clsParam, subParam) {
+    const targetClass = typeof clsParam === 'string' ? clsParam : selectedClass;
+    const targetSub = typeof subParam === 'string' ? subParam : subject;
+
+    if (!targetClass || !targetSub.trim()) return alert('ക്ലാസ്സും വിഷയവും നൽകുക!');
     setLoading(true); setMsg('');
-    const cleanSub = subject.trim();
+    const cleanSub = targetSub.trim();
 
     const [{ data: stData }, { data: mkData }] = await Promise.all([
-      supabase.from('students').select('adm_no, name').eq('class_name', selectedClass).order('name'),
-      supabase.from('marks').select('*').eq('class_name', selectedClass).eq('subject', cleanSub)
+      supabase.from('students').select('adm_no, name').eq('class_name', targetClass).order('name'),
+      supabase.from('marks').select('*').eq('class_name', targetClass).eq('subject', cleanSub)
     ]);
 
     const map = {};
@@ -251,24 +292,58 @@ export default function ExamsModule({ onBack, user }) {
       {/* 1. MARK ENTRY */}
       {view === 'entry' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Select Assigned Module Dropdown */}
           <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}>
-              <option value="">-- ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <input
-              value={subject}
-              onChange={e => setSubject(e.target.value)}
-              placeholder="വിഷയം (ഉദാ: Fiqh, English, Hifz)"
-              style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}
-            />
-            <button onClick={loadForEntry} style={{ padding: 12, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-              Load Students
-            </button>
+            <label style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>Select Assigned Module:</label>
+            {assignments.length > 0 ? (
+              <select
+                value={selectedAssignment}
+                onChange={e => handleAssignmentSelect(e.target.value)}
+                style={{ padding: 12, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600, background: '#fff' }}
+              >
+                <option value="">-- Select Assignment --</option>
+                {assignments.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.class_name} - {a.subject_name}{isAdmin ? ` (${a.staff_name})` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div style={{ fontSize: 13, color: '#94a3b8', padding: '6px 0' }}>
+                {isAdmin
+                  ? 'അസൈൻമെന്റുകളൊന്നും ചേർത്തിട്ടില്ല. താഴെ നിന്ന് നേരിട്ട് ക്ലാസ്സും വിഷയവും തിരഞ്ഞെടുക്കാം.'
+                  : 'നിങ്ങൾക്ക് ഇതുവരെ വിഷയങ്ങളൊന്നും അസൈൻ ചെയ്തിട്ടില്ല. അഡ്മിനുമായി ബന്ധപ്പെടുക.'}
+              </div>
+            )}
+
+            {/* Admin-നു മാത്രം നേരിട്ട് ഏത് ക്ലാസ്സും വിഷയവും എടുക്കാനുള്ള ഓപ്ഷൻ */}
+            {isAdmin && (
+              <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: 12, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>OR MANUAL ENTRY (ADMIN)</div>
+                <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedAssignment(''); }} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}>
+                  <option value="">-- ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക --</option>
+                  {classes.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+                <input
+                  value={subject}
+                  onChange={e => { setSubject(e.target.value); setSelectedAssignment(''); }}
+                  placeholder="വിഷയം (ഉദാ: Fiqh, English, Hifz)"
+                  style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}
+                />
+                <button onClick={() => loadForEntry()} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  Load Students
+                </button>
+              </div>
+            )}
           </div>
 
-          {students.length > 0 && (
+          {loading && <p style={{ textAlign: 'center', color: '#64748b', fontSize: 13 }}>ലോഡ് ചെയ്യുന്നു...</p>}
+
+          {students.length > 0 && !loading && (
             <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+              <div style={{ padding: '10px 14px', background: '#eef2ff', fontSize: 13, fontWeight: 700, color: '#2e44d2' }}>
+                {selectedClass} — {subject} ({students.length} Students)
+              </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
