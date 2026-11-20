@@ -1,0 +1,541 @@
+import React, { useState, useEffect } from 'react';
+import {
+  FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
+  Briefcase, Bell, BarChart3, Sliders, Home, User, ChevronLeft,
+  LogOut, Plus, Building, Library, Lock, GraduationCap
+} from 'lucide-react';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
+import StudentsModule from './modules/StudentsModule';
+import ExamsModule from './modules/ExamsModule';
+import AttendanceModule from './modules/AttendanceModule';
+import FinanceModule from './modules/FinanceModule';
+import ActivityModule from './modules/ActivityModule';
+import SyllabusModule from './modules/SyllabusModule';
+import StaffAppraisalModule from './modules/StaffAppraisalModule';
+import AnnouncementsModule from './modules/AnnouncementsModule';
+import StaffModule from './modules/StaffModule';
+import ReportsModule from './modules/ReportsModule';
+
+const ICON_MAP = {
+  FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
+  Briefcase, Bell, BarChart3, Sliders, Library, Building
+};
+const DEFAULT_MODULES = [
+  { id: 'examinations', name: 'Examinations', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'attendance', name: 'Attendance', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'students', name: 'Students', icon: 'Users', visible_roles: ['admin', 'coordinator', 'teacher'], is_active: true },
+  { id: 'finance', name: 'Finance', icon: 'Wallet', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'activity', name: 'Activity Points', icon: 'Star', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'syllabus', name: 'Syllabus', icon: 'BookOpen', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'appraisal', name: 'Staff Appraisal', icon: 'Award', visible_roles: ['admin', 'coordinator', 'teacher', 'appraisal_authority'], is_active: true },
+  { id: 'staff', name: 'Staff', icon: 'Briefcase', visible_roles: ['admin', 'coordinator'], is_active: true },
+  { id: 'announcements', name: 'Announcements', icon: 'Bell', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'reports', name: 'Reports', icon: 'BarChart3', visible_roles: ['admin', 'coordinator'], is_active: true },
+  { id: 'settings', name: 'Settings', icon: 'Sliders', visible_roles: ['admin'], is_active: true },
+  { id: 'library', name: 'Library', icon: 'Library', visible_roles: ['admin', 'teacher', 'student'], is_active: false },
+  { id: 'hostel', name: 'Hostel', icon: 'Building', visible_roles: ['admin', 'teacher', 'student'], is_active: false },
+];
+
+const SUB_MENUS = {
+  examinations: [
+    'Mark entry (W1–W4)',
+    'Hifz / Midterm entry',
+    'Class reports',
+    'Campus performance',
+    'Pending mark entry',
+    'Grade cards (PDF)'
+  ],
+  attendance: [
+    'Monthly register',
+    'Class-wise attendance',
+    'Attendance percentage',
+    'Pending alerts',
+    'Campus analysis'
+  ],
+  students: [
+    'Student directory',
+    'Add student',
+    'Admission numbers',
+    'Student profile',
+    'Bulk import'
+  ],
+  finance: [
+    'Student ledger',
+    'Class ledger',
+    'Donation entry',
+    'Monthly collection (Apr–Mar)',
+    'Financial reports'
+  ],
+  activity: [
+    'Single entry',
+    'Class-wise bulk entry',
+    'Reasons and categories',
+    'Class ranking',
+    'Discipline report'
+  ]
+};
+
+export default function App() {
+  const [user, setUser] = useState(null); // { name, role, id, type: 'staff'|'student' }
+  const [rolePreview, setRolePreview] = useState('admin');
+  const [activeTab, setActiveTab] = useState('home'); // home | notices | account
+  const [activeModule, setActiveModule] = useState(null);
+  const [modules, setModules] = useState(DEFAULT_MODULES);
+  const [stats, setStats] = useState({ students: 0, staff: 0, attendance: '94%' });
+  const [newModName, setNewModName] = useState('');
+  const [academicYear, setAcademicYear] = useState('2026–27');
+  const [resetting, setResetting] = useState(false);
+
+  // Login State
+  const [loginMode, setLoginMode] = useState('staff'); // staff | student
+  const [loginId, setLoginId] = useState('');
+  const [loginPass, setLoginPass] = useState('');
+  const [loginErr, setLoginErr] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // ഡാറ്റാബേസിൽ നിന്ന് മൊഡ്യൂളുകളും എണ്ണവും അക്കാദമിക് ഇയറും ലോഡ് ചെയ്യുന്നു
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    (async () => {
+      const { data: modData } = await supabase.from('portal_modules').select('*').order('sort_order');
+      if (modData && modData.length > 0) setModules(modData);
+
+      const { count: stCount } = await supabase.from('students').select('*', { count: 'exact', head: true });
+      const { count: sfCount } = await supabase.from('staff').select('*', { count: 'exact', head: true });
+      setStats(prev => ({
+        ...prev,
+        students: stCount || prev.students,
+        staff: sfCount || prev.staff
+      }));
+
+      const { data: yrData } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'academic_year')
+        .maybeSingle();
+      if (yrData?.value) setAcademicYear(yrData.value);
+    })();
+  }, []);
+
+  // ലോഗിൻ ഫംഗ്ഷൻ
+  async function handleLogin(e) {
+    e.preventDefault();
+    setLoginErr('');
+    setLoading(true);
+
+    try {
+      if (loginMode === 'staff') {
+        const { data: staff, error } = await supabase
+          .from('staff')
+          .select('*')
+          .eq('staff_id', loginId.trim())
+          .eq('pin', loginPass.trim())
+          .maybeSingle();
+        if (error || !staff) throw new Error('Staff ID-യോ PIN-ഓ തെറ്റാണ്!');
+        const role = staff.role || 'teacher';
+        setUser({ id: staff.staff_id, name: staff.name, role, type: 'staff' });
+        setRolePreview(role);
+      } else {
+        const { data: st, error } = await supabase
+          .from('students')
+          .select('*')
+          .eq('adm_no', loginId.trim())
+          .eq('pin', loginPass.trim())
+          .maybeSingle();
+        if (error || !st) throw new Error('അഡ്മിഷൻ നമ്പറോ PIN-ഓ തെറ്റാണ്!');
+        setUser({ id: st.adm_no, name: st.name, role: 'student', class_name: st.class_name, type: 'student' });
+        setRolePreview('student');
+      }
+    } catch (err) {
+      setLoginErr(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // മൊഡ്യൂൾ ഓൺ/ഓഫ് ചെയ്യാൻ (Settings)
+  async function toggleModule(mod) {
+    const updated = modules.map(m => m.id === mod.id ? { ...m, is_active: !m.is_active } : m);
+    setModules(updated);
+    if (isSupabaseConfigured) {
+      await supabase.from('portal_modules').update({ is_active: !mod.is_active }).eq('id', mod.id);
+    }
+  }
+
+ // പുതിയ മൊഡ്യൂൾ ചേർക്കാൻ (Settings)
+  async function addNewModule(e) {
+    e.preventDefault();
+    if (!newModName.trim()) return;
+    const id = newModName.trim().toLowerCase().replace(/\s+/g, '_');
+    const newMod = {
+      id,
+      name: newModName.trim(),
+      icon: 'Sliders',
+      visible_roles: ['admin', 'teacher', 'student'],
+      is_active: true,
+      sort_order: modules.length + 1
+    };
+    setModules([...modules, newMod]);
+    setNewModName('');
+    if (isSupabaseConfigured) {
+      await supabase.from('portal_modules').insert(newMod);
+    }
+  }
+
+  // Academic Year മാറ്റാൻ
+  async function handleYearChange(newYear) {
+    setAcademicYear(newYear);
+    if (isSupabaseConfigured) {
+      await supabase.from('app_settings').upsert({ key: 'academic_year', value: newYear });
+    }
+  }
+
+  // Next Year Full Data Reset
+  async function handleYearReset() {
+    const confirmText = window.prompt(
+      `WARNING: ${academicYear}-ലെ പഴയ Attendance, Marks, Finance, Activity, Announcements ഡാറ്റയെല്ലാം ഡിലീറ്റ് ആകും!\n\nകൺഫേം ചെയ്യാൻ "RESET" എന്ന് ടൈപ്പ് ചെയ്യുക:`
+    );
+    if (confirmText !== 'RESET') return;
+
+    setResetting(true);
+    try {
+      const tablesToReset = ['attendance', 'exams', 'marks', 'finance', 'activity_points', 'announcements'];
+      for (const tbl of tablesToReset) {
+        await supabase.from(tbl).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      }
+      alert('പഴയ ഡാറ്റയെല്ലാം റീസെറ്റ് ആയി! ഇനി പുതിയ Academic Year സെലക്ട് ചെയ്യാം.');
+    } catch (err) {
+      alert('Reset error: ' + err.message);
+    } finally {
+      setResetting(false);
+    }
+  }
+
+  // ലോഗിൻ സ്ക്രീൻ
+  if (!user) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div style={{ width: '100%', maxWidth: 400, background: '#fff', borderRadius: 20, padding: 28, boxShadow: '0 10px 30px rgba(37,99,235,0.08)', border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#2e44d2', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 16 }}>NH</div>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 17, color: '#0f172a' }}>Noorul Hidaya</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>Islamic Academy • Campus ERP</div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', background: '#f1f5f9', padding: 4, borderRadius: 12, marginBottom: 20 }}>
+            <button onClick={() => setLoginMode('staff')} style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer', background: loginMode === 'staff' ? '#fff' : 'transparent', color: loginMode === 'staff' ? '#2e44d2' : '#64748b', boxShadow: loginMode === 'staff' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none' }}>
+              Staff / Admin
+            </button>
+            <button onClick={() => setLoginMode('student')} style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer', background: loginMode === 'student' ? '#fff' : 'transparent', color: loginMode === 'student' ? '#2e44d2' : '#64748b', boxShadow: loginMode === 'student' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none' }}>
+              Student / Parent
+            </button>
+          </div>
+
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                {loginMode === 'staff' ? 'User ID or Email' : 'Admission Number'}
+              </label>
+              <input
+                required
+                value={loginId}
+                onChange={e => setLoginId(e.target.value)}
+                placeholder={loginMode === 'staff' ? 'e.g. admin or teacher@email.com' : 'e.g. 1024'}
+                style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 6, fontSize: 14 }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                {loginMode === 'staff' ? 'Password' : 'PIN (Default: 1234)'}
+              </label>
+              <input
+                required
+                type="password"
+                value={loginPass}
+                onChange={e => setLoginPass(e.target.value)}
+                placeholder="••••••••"
+                style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 6, fontSize: 14 }}
+              />
+            </div>
+
+            {loginErr && <div style={{ background: '#fef2f2', color: '#dc2626', padding: 10, borderRadius: 8, fontSize: 13 }}>{loginErr}</div>}
+
+            <button type="submit" disabled={loading} style={{ width: '100%', padding: 13, borderRadius: 12, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer', marginTop: 4 }}>
+              {loading ? 'Signing in...' : 'Sign In'}
+            </button>
+          </form>
+
+         
+        </div>
+      </div>
+    );
+  }
+
+  const currentRole = user.role === 'admin' ? rolePreview : user.role;
+  const visibleModules = modules.filter(m => m.is_active && (m.visible_roles || []).includes(currentRole));
+
+  return (
+    <div style={{ minHeight: '100vh', paddingBottom: 80, maxWidth: 520, margin: '0 auto', background: '#f4f6fc' }}>
+      {/* TOP HEADER */}
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', background: '#f4f6fc', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: '#2e44d2', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14 }}>NH</div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a', lineHeight: 1.2 }}>Noorul Hidaya</div>
+            <div style={{ fontSize: 12, color: '#64748b' }}>Islamic Academy</div>
+          </div>
+        </div>
+
+        {user.role === 'admin' ? (
+          <select
+            value={rolePreview}
+            onChange={e => { setRolePreview(e.target.value); setActiveModule(null); }}
+            style={{ padding: '7px 12px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, fontWeight: 600, color: '#1e293b' }}
+          >
+            <option value="admin">Super Admin</option>
+            <option value="teacher">Teacher</option>
+            <option value="student">Student</option>
+          </select>
+        ) : (
+          <span style={{ padding: '6px 12px', borderRadius: 10, background: '#fff', border: '1px solid #e2e8f0', fontSize: 12, fontWeight: 600, textTransform: 'capitalize' }}>
+            {user.role}
+          </span>
+        )}
+      </header>
+
+      <main style={{ padding: '4px 18px 20px' }}>
+        {/* SETTINGS / MODULE MANAGER VIEW */}
+        {activeModule === 'students' ? (
+          <StudentsModule onBack={() => setActiveModule(null)} />
+        ) : activeModule === 'examinations' ? (
+          <ExamsModule onBack={() => setActiveModule(null)} user={user} />
+       ) : activeModule === 'attendance' ? (
+          <AttendanceModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'finance' ? (
+          <FinanceModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'activity' ? (
+          <ActivityModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'syllabus' ? (
+          <SyllabusModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'appraisal' ? (
+          <StaffAppraisalModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'announcements' ? (
+          <AnnouncementsModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'staff' ? (
+          <StaffModule onBack={() => setActiveModule(null)} />
+        ) : activeModule === 'reports' ? (
+          <ReportsModule onBack={() => setActiveModule(null)} />
+        ) : activeModule === 'settings' ? (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+              <button onClick={() => setActiveModule(null)} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <ChevronLeft size={20} />
+              </button>
+              <h2 style={{ fontSize: 20, fontWeight: 800 }}>Settings</h2>
+            </div>
+            {/* ACADEMIC YEAR & RESET CARD */}
+            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 18 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Academic Year & Reset</div>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <select
+                  value={academicYear}
+                  onChange={e => handleYearChange(e.target.value)}
+                  style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600 }}
+                >
+                  <option value="2025–26">2025–26</option>
+                  <option value="2026–27">2026–27</option>
+                  <option value="2027–28">2027–28</option>
+                  <option value="2028–29">2028–29</option>
+                  <option value="2029–30">2029–30</option>
+                </select>
+              </div>
+              <button
+                onClick={handleYearReset}
+                disabled={resetting}
+                style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}
+              >
+                {resetting ? 'Resetting data...' : 'Reset Old Year Data (New Year Start)'}
+              </button>
+            </div>
+
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Module manager</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {modules.map(mod => {
+                const Icon = ICON_MAP[mod.icon] || Sliders;
+                return (
+                  <div key={mod.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fff', padding: '12px 16px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 38, height: 38, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center' }}>
+                        <Icon size={18} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{mod.name}</div>
+                        <div style={{ fontSize: 11, color: '#64748b' }}>
+                          {mod.is_active ? `Visible to ${mod.visible_roles?.length || 1} roles` : 'Future module'}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => toggleModule(mod)}
+                      style={{
+                        width: 44, height: 24, borderRadius: 20, border: 'none', cursor: 'pointer', position: 'relative',
+                        background: mod.is_active ? '#2e44d2' : '#cbd5e1', transition: '0.2s'
+                      }}
+                    >
+                      <span style={{
+                        position: 'absolute', top: 3, left: mod.is_active ? 23 : 3,
+                        width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: '0.2s'
+                      }} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            <form onSubmit={addNewModule} style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <input
+                value={newModName}
+                onChange={e => setNewModName(e.target.value)}
+                placeholder="New module name"
+                style={{ flex: 1, padding: '11px 14px', borderRadius: 12, border: '1px solid #cbd5e1', background: '#fff', fontSize: 14 }}
+              />
+              <button type="submit" style={{ padding: '0 18px', borderRadius: 12, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                Add module
+              </button>
+            </form>
+          </div>
+        ) : activeModule ? (
+          /* SUB-MENU VIEW (Examinations, Attendance, Students, Finance, Activity, etc.) */
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+              <button onClick={() => setActiveModule(null)} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                <ChevronLeft size={20} />
+              </button>
+              <h2 style={{ fontSize: 20, fontWeight: 800 }}>
+                {modules.find(m => m.id === activeModule)?.name}
+              </h2>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {(SUB_MENUS[activeModule] || ['Overview', 'Manage Records', 'Reports']).map(item => {
+                const modObj = modules.find(m => m.id === activeModule);
+                const Icon = ICON_MAP[modObj?.icon] || FileText;
+                return (
+                  <button
+                    key={item}
+                    onClick={() => alert(`${item} - അടുത്ത ഘട്ടത്തിൽ ഈ പേജ് കണക്ട് ചെയ്യാം!`)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0', cursor: 'pointer', textAlign: 'left', width: '100%' }}
+                  >
+                    <div style={{ width: 38, height: 38, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                      <Icon size={18} />
+                    </div>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1e293b' }}>{item}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : activeTab === 'account' ? (
+          /* ACCOUNT VIEW */
+          <div style={{ background: '#fff', padding: 22, borderRadius: 18, border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginBottom: 12 }}>My Account</h3>
+            <p style={{ fontSize: 14, color: '#475569', marginBottom: 6 }}><b>Name:</b> {user.name}</p>
+            <p style={{ fontSize: 14, color: '#475569', marginBottom: 18 }}><b>Role:</b> {currentRole}</p>
+            <button
+              onClick={async () => { if (isSupabaseConfigured) await supabase.auth.signOut(); setUser(null); setActiveTab('home'); }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: 12, borderRadius: 12, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+            >
+              <LogOut size={16} /> Logout
+            </button>
+          </div>
+        ) : activeTab === 'notices' ? (
+          
+          /* NOTICES VIEW */
+          <div style={{ background: '#fff', padding: 22, borderRadius: 18, border: '1px solid #e2e8f0' }}>
+            <h3 style={{ marginBottom: 12 }}>Campus Notices</h3>
+            <p style={{ fontSize: 13, color: '#64748b' }}>പ്രത്യേക അറിയിപ്പുകൾ ഇവിടെ കാണാം.</p>
+          </div>
+        ) : (
+          /* HOME SCREEN (TILE GRID) */
+          <>
+            {/* HERO BANNER */}
+            <div style={{ background: '#2e44d2', color: '#fff', borderRadius: 18, padding: '22px 20px', marginBottom: 14, boxShadow: '0 8px 20px rgba(46,68,210,0.2)' }}>
+              <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>Good evening</div>
+              <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Welcome, {user.name}</div>
+              <div style={{ fontSize: 13, opacity: 0.9 }}>Academic Year {academicYear}</div>
+            </div>
+
+            {/* 3 STAT CARDS */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+              <div style={{ background: '#fff', padding: '14px 12px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>{stats.students}</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Students</div>
+              </div>
+              <div style={{ background: '#fff', padding: '14px 12px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>{stats.staff}</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Staff</div>
+              </div>
+              <div style={{ background: '#fff', padding: '14px 12px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>{stats.attendance}</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Present today</div>
+              </div>
+            </div>
+
+            {/* 3-COLUMN TILE GRID */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              {visibleModules.map(mod => {
+                const Icon = ICON_MAP[mod.icon] || FileText;
+                return (
+                  <button
+                    key={mod.id}
+                    onClick={() => setActiveModule(mod.id)}
+                    style={{
+                      background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: '18px 8px',
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, cursor: 'pointer',
+                      boxShadow: '0 2px 6px rgba(15,23,42,0.03)'
+                    }}
+                  >
+                    <div style={{ width: 42, height: 42, borderRadius: 12, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center' }}>
+                      <Icon size={20} />
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#1e293b', textAlign: 'center', lineHeight: 1.2 }}>
+                      {mod.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </main>
+
+      {/* BOTTOM NAVIGATION */}
+      <nav style={{
+        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        width: '100%', maxWidth: 520, background: '#fff', borderTop: '1px solid #e2e8f0',
+        display: 'flex', justifyContent: 'space-around', padding: '10px 0', zIndex: 30
+      }}>
+        {[
+          { id: 'home', label: 'Home', icon: Home },
+          { id: 'notices', label: 'Notices', icon: Bell },
+          { id: 'account', label: 'Account', icon: User }
+        ].map(t => {
+          const Icon = t.icon;
+          const active = activeTab === t.id && !activeModule;
+          return (
+            <button
+              key={t.id}
+              onClick={() => { setActiveTab(t.id); setActiveModule(null); }}
+              style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', color: active ? '#2e44d2' : '#64748b', fontWeight: active ? 700 : 500, fontSize: 11 }}
+            >
+              <Icon size={20} />
+              <span>{t.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+    </div>
+  );
+}
