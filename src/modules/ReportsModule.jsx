@@ -4,19 +4,20 @@ import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
 
 export default function ReportsModule({ onBack }) {
-  const [tab, setTab] = useState('performance'); // performance | class | pending
+  const [tab, setTab] = useState('class'); // performance | class | pending
   const [loading, setLoading] = useState(false);
 
   // Master Data
   const [classes, setClasses] = useState([]);
   const [teachers, setTeachers] = useState([]);
 
-  // 1. Performance Evaluation State
+  // 1. Performance State
   const [perfData, setPerfData] = useState(null);
 
   // 2. Class Report State
   const [selectedClass, setSelectedClass] = useState('');
-  const [markMode, setMarkMode] = useState('30'); // '30' (CCE Out of 30) | '100' (Raw Out of 100)
+  const [selectedSubject, setSelectedSubject] = useState('ALL'); // 'ALL' or specific subject
+  const [markScale, setMarkScale] = useState('30'); // '30' | '100'
   const [classReport, setClassReport] = useState(null);
 
   // 3. Pending Tracker State
@@ -38,9 +39,7 @@ export default function ReportsModule({ onBack }) {
     if (ta) setTeachers([...new Set(ta.map(t => t.staff_name).filter(Boolean))].sort());
   }
 
-  // ==========================================
-  // EXPORT HELPERS (EXCEL CSV, PDF, JPEG)
-  // ==========================================
+  // Export Helpers
   function downloadCSV(filename, headers, rows) {
     const csvContent = [
       headers.join(','),
@@ -55,7 +54,7 @@ export default function ReportsModule({ onBack }) {
     URL.revokeObjectURL(url);
   }
 
-  function downloadPDF(elementId, filename, orientation = 'portrait') {
+  function downloadPDF(elementId, filename, landscape = false) {
     const el = document.getElementById(elementId);
     if (!el) return;
     html2pdf().set({
@@ -63,7 +62,7 @@ export default function ReportsModule({ onBack }) {
       filename,
       image: { type: 'jpeg', quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation }
+      jsPDF: { unit: 'mm', format: 'a4', orientation: landscape ? 'landscape' : 'portrait' }
     }).from(el).save();
   }
 
@@ -71,11 +70,11 @@ export default function ReportsModule({ onBack }) {
     const el = document.getElementById(elementId);
     if (!el) return;
     try {
-      const canvas = await html2pdf()
-        .set({ html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' } })
-        .from(el)
-        .toCanvas()
-        .get('canvas');
+      const worker = html2pdf().set({
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }
+      }).from(el);
+      const canvas = await worker.toCanvas().get('canvas');
       const link = document.createElement('a');
       link.download = filename;
       link.href = canvas.toDataURL('image/jpeg', 0.95);
@@ -86,7 +85,7 @@ export default function ReportsModule({ onBack }) {
   }
 
   // ==========================================
-  // 1. GENERATE CAMPUS PERFORMANCE REPORT
+  // 1. PERFORMANCE EVALUATION
   // ==========================================
   async function generatePerformance() {
     setLoading(true);
@@ -161,15 +160,17 @@ export default function ReportsModule({ onBack }) {
       }))
       .sort((a, b) => b.avg - a.avg);
 
-    const top10 = rankedStudents.slice(0, 10);
-    const bottom10 = [...rankedStudents].reverse().slice(0, 10);
-
-    setPerfData({ bestClasses, top10, bottom10, allRanked: rankedStudents });
+    setPerfData({
+      bestClasses,
+      top10: rankedStudents.slice(0, 10),
+      bottom10: [...rankedStudents].reverse().slice(0, 10),
+      allRanked: rankedStudents
+    });
     setLoading(false);
   }
 
   // ==========================================
-  // 2. GENERATE CLASS REPORT (OUT OF 30 & 100)
+  // 2. CLASS REPORT (CONSOLIDATED + W1-W4 SUBJECT WISE)
   // ==========================================
   async function generateClassReport() {
     if (!selectedClass) return alert('Class select cheyyuka!');
@@ -190,59 +191,69 @@ export default function ReportsModule({ onBack }) {
     });
     const subjects = [...subSet].sort();
 
-    let maxFinal30 = 0;
-    let maxRaw100 = 0;
+    let maxFinal = 0;
+    let maxRaw = 0;
     subjects.forEach(sub => {
       const isHifz = sub.toUpperCase().includes('HIFZ') || sub.toUpperCase().includes('MIDTERM');
-      maxFinal30 += isHifz ? 100 : 30;
-      maxRaw100 += 100;
+      maxFinal += isHifz ? 100 : 30;
+      maxRaw += 100;
     });
 
     const rows = (stData || []).map((s, idx) => {
       const myMarks = (mkData || []).filter(m => m.adm_no === s.adm_no);
       const subMap30 = {};
       const subMap100 = {};
-      let finalTotal30 = 0;
-      let rawTotal100 = 0;
+      const detailMap = {}; // stores { w1, w2, w3, w4, total, final_mark } per subject
+      let finalTotal = 0;
+      let rawTotal = 0;
 
       myMarks.forEach(m => {
-        const subKey = m.subject.trim();
-        const isHifz = subKey.toUpperCase().includes('HIFZ') || subKey.toUpperCase().includes('MIDTERM');
-        const raw = Number(m.total) || 0;
-        const cce30 = m.final_mark !== null && m.final_mark !== undefined
+        const key = m.subject.trim();
+        const rawVal = m.total !== null && m.total !== undefined ? Number(m.total) : null;
+        const val30 = m.final_mark !== null && m.final_mark !== undefined
           ? Number(m.final_mark)
-          : isHifz ? raw : Number(((raw / 100) * 30).toFixed(2));
+          : (rawVal !== null ? Number(((rawVal / 100) * 30).toFixed(2)) : null);
 
-        subMap30[subKey] = cce30;
-        subMap100[subKey] = raw;
-        finalTotal30 += cce30;
-        rawTotal100 += raw;
+        subMap100[key] = rawVal;
+        subMap30[key] = val30;
+        detailMap[key] = {
+          w1: m.w1,
+          w2: m.w2,
+          w3: m.w3,
+          w4: m.w4,
+          total: rawVal,
+          final30: val30
+        };
+        finalTotal += val30 || 0;
+        rawTotal += rawVal || 0;
       });
 
-      const perc = maxFinal30 > 0 ? ((finalTotal30 / maxFinal30) * 100).toFixed(1) : '0.0';
+      const perc = maxFinal > 0 ? ((finalTotal / maxFinal) * 100).toFixed(1) : '0.0';
       return {
-        rollNo: idx + 1,
+        roll: idx + 1,
         adm_no: s.adm_no,
         name: s.name,
         subMap30,
         subMap100,
-        finalTotal30: Number(finalTotal30.toFixed(2)),
-        rawTotal100: Number(rawTotal100.toFixed(2)),
+        detailMap,
+        finalTotal: Number(finalTotal.toFixed(2)),
+        rawTotal: Number(rawTotal.toFixed(2)),
         perc
       };
     });
 
-    const sorted = [...rows].sort((a, b) => b.finalTotal30 - a.finalTotal30);
+    const sorted = [...rows].sort((a, b) => b.finalTotal - a.finalTotal);
     const rankMap = {};
     sorted.forEach((r, idx) => { rankMap[r.adm_no] = idx + 1; });
     rows.forEach(r => { r.rank = rankMap[r.adm_no]; });
 
-    setClassReport({ className: selectedClass, subjects, maxFinal30, maxRaw100, rows });
+    setSelectedSubject('ALL');
+    setClassReport({ className: selectedClass, subjects, maxFinal, maxRaw, rows });
     setLoading(false);
   }
 
   // ==========================================
-  // 3. PENDING MARK ENTRY TRACKER
+  // 3. PENDING TRACKER (W1, W2, W3, W4 WISE)
   // ==========================================
   async function checkPending(mode) {
     if (mode === 'class' && !pendingClass) return alert('Class select cheyyuka!');
@@ -256,7 +267,7 @@ export default function ReportsModule({ onBack }) {
     const [{ data: asgData }, { data: stData }, { data: mkData }] = await Promise.all([
       asgQuery,
       supabase.from('students').select('adm_no, class_name'),
-      supabase.from('marks').select('adm_no, class_name, subject')
+      supabase.from('marks').select('adm_no, class_name, subject, w1, w2, w3, w4, total')
     ]);
 
     const classCount = {};
@@ -264,10 +275,16 @@ export default function ReportsModule({ onBack }) {
       classCount[s.class_name] = (classCount[s.class_name] || 0) + 1;
     });
 
-    const markCount = {};
+    // Count entered W1, W2, W3, W4 per (class + subject)
+    const workCounts = {};
     (mkData || []).forEach(m => {
       const key = `${m.class_name}__${String(m.subject || '').trim().toLowerCase()}`;
-      markCount[key] = (markCount[key] || 0) + 1;
+      if (!workCounts[key]) workCounts[key] = { w1: 0, w2: 0, w3: 0, w4: 0, total: 0 };
+      if (m.w1 !== null && m.w1 !== undefined && m.w1 !== '') workCounts[key].w1++;
+      if (m.w2 !== null && m.w2 !== undefined && m.w2 !== '') workCounts[key].w2++;
+      if (m.w3 !== null && m.w3 !== undefined && m.w3 !== '') workCounts[key].w3++;
+      if (m.w4 !== null && m.w4 !== undefined && m.w4 !== '') workCounts[key].w4++;
+      if (m.total !== null && m.total !== undefined && m.total !== '') workCounts[key].total++;
     });
 
     const results = (asgData || [])
@@ -275,19 +292,23 @@ export default function ReportsModule({ onBack }) {
       .map(a => {
         const totalSt = classCount[a.class_name] || 0;
         const key = `${a.class_name}__${String(a.subject_name).trim().toLowerCase()}`;
-        const entered = markCount[key] || 0;
-        const pending = Math.max(0, totalSt - entered);
-        const status = entered === 0 ? 'Not Started' : pending > 0 ? 'Partial' : 'Completed';
-        return { ...a, totalSt, entered, pending, status };
+        const wc = workCounts[key] || { w1: 0, w2: 0, w3: 0, w4: 0, total: 0 };
+        const isHifz = a.subject_name.toUpperCase().includes('HIFZ') || a.subject_name.toUpperCase().includes('MIDTERM');
+
+        const hasPending = isHifz
+          ? wc.total < totalSt
+          : wc.w1 < totalSt || wc.w2 < totalSt || wc.w3 < totalSt || wc.w4 < totalSt;
+
+        return { ...a, totalSt, wc, isHifz, hasPending };
       })
-      .filter(r => r.pending > 0);
+      .filter(r => r.hasPending);
 
     setPendingTitle(
       mode === 'class'
-        ? `Pending Marks — Class ${pendingClass}`
+        ? `Pending W1–W4 — Class ${pendingClass}`
         : mode === 'teacher'
-        ? `Pending Marks — ${pendingTeacher}`
-        : 'Campus-Wide Pending Mark Entries'
+        ? `Pending W1–W4 — ${pendingTeacher}`
+        : 'Campus-Wide Pending (W1–W4)'
     );
     setPendingList(results);
     setLoading(false);
@@ -295,25 +316,26 @@ export default function ReportsModule({ onBack }) {
 
   const medal = idx => (idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '');
 
-  // Reusable 3-Button Export Bar (PDF | JPEG | EXCEL)
+  const WorkBadge = ({ done, total }) => {
+    if (total === 0) return <span style={{ color: '#94a3b8' }}>-</span>;
+    if (done >= total) {
+      return <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: '#dcfce7', color: '#15803d' }}>✓ {done}/{total}</span>;
+    }
+    if (done > 0) {
+      return <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: '#fef3c7', color: '#b45309' }}>{done}/{total}</span>;
+    }
+    return <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 6, background: '#fee2e2', color: '#dc2626' }}>0/{total}</span>;
+  };
+
   const ExportBar = ({ onPDF, onJPEG, onExcel, excelLabel = 'EXCEL (CSV)' }) => (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-      <button
-        onClick={onPDF}
-        style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
-      >
+      <button onClick={onPDF} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
         <Download size={14} /> PDF
       </button>
-      <button
-        onClick={onJPEG}
-        style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
-      >
+      <button onClick={onJPEG} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
         <ImageIcon size={14} /> JPEG
       </button>
-      <button
-        onClick={onExcel}
-        style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
-      >
+      <button onClick={onExcel} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
         <FileSpreadsheet size={14} /> {excelLabel}
       </button>
     </div>
@@ -332,9 +354,9 @@ export default function ReportsModule({ onBack }) {
       {/* TOP TABS */}
       <div style={{ display: 'flex', background: '#e2e8f0', padding: 4, borderRadius: 14, marginBottom: 16, gap: 4 }}>
         {[
-          { id: 'performance', label: 'Performance' },
           { id: 'class', label: 'Class Report' },
-          { id: 'pending', label: 'Pending' }
+          { id: 'pending', label: 'Pending (W1–W4)' },
+          { id: 'performance', label: 'Performance' }
         ].map(t => (
           <button
             key={t.id}
@@ -352,32 +374,289 @@ export default function ReportsModule({ onBack }) {
       </div>
 
       {/* ================================================= */}
-      {/* TAB 1: PERFORMANCE EVALUATION                     */}
+      {/* TAB 1: CLASS REPORT (CONSOLIDATED + W1-W4 VIEW)   */}
+      {/* ================================================= */}
+      {tab === 'class' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 600 }}>
+              <option value="">-- Select Class --</option>
+              {classes.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button onClick={generateClassReport} disabled={loading} style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+              {loading ? '...' : 'GENERATE'}
+            </button>
+          </div>
+
+          {classReport && (
+            <>
+              {/* Subject Filter Dropdown */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <select
+                  value={selectedSubject}
+                  onChange={e => setSelectedSubject(e.target.value)}
+                  style={{ flex: 1, padding: 10, borderRadius: 10, border: '1px solid #93c5fd', background: '#eff6ff', color: '#1e3a8a', fontWeight: 700, fontSize: 12 }}
+                >
+                  <option value="ALL">📊 All Subjects (Consolidated Report)</option>
+                  {classReport.subjects.map(sub => (
+                    <option key={sub} value={sub}>📝 {sub} — Detailed (W1, W2, W3, W4 & Out of 30)</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Scale Toggle (Only for Consolidated View) */}
+              {selectedSubject === 'ALL' && (
+                <div style={{ display: 'flex', background: '#f1f5f9', padding: 4, borderRadius: 10, border: '1px solid #e2e8f0', gap: 4 }}>
+                  <button
+                    onClick={() => setMarkScale('30')}
+                    style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: markScale === '30' ? '#2563eb' : 'transparent', color: markScale === '30' ? '#fff' : '#475569' }}
+                  >
+                    CCE Mark List (Out of 30)
+                  </button>
+                  <button
+                    onClick={() => setMarkScale('100')}
+                    style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: markScale === '100' ? '#2563eb' : 'transparent', color: markScale === '100' ? '#fff' : '#475569' }}
+                  >
+                    Raw Total (Out of 100)
+                  </button>
+                </div>
+              )}
+
+              {/* REPORT TABLE */}
+              <div id="nhia-class-report" style={{ background: '#fff', borderRadius: 14, border: '1px solid #cbd5e1', padding: 14, overflowX: 'auto' }}>
+                <div style={{ textAlign: 'center', marginBottom: 12, borderBottom: '2px solid #1e293b', paddingBottom: 8 }}>
+                  <div style={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
+                    NOORUL HIDAYA ISLAMIC ACADEMY — {selectedSubject === 'ALL' ? 'CCE MARK LIST' : `${selectedSubject} MARK SHEET`}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#2563eb', marginTop: 2 }}>
+                    Class: {classReport.className} • {selectedSubject === 'ALL'
+                      ? (markScale === '30' ? 'Out of 30 (Converted)' : 'Out of 100 (Raw)')
+                      : 'W1–W4 Breakdown + Total (100) + Out of 30'}
+                  </div>
+                </div>
+
+                {selectedSubject === 'ALL' ? (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    <thead style={{ background: '#1e293b', color: '#fff' }}>
+                      <tr>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>Roll</th>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>Adm No</th>
+                        <th style={{ padding: 7, border: '1px solid #334155', textAlign: 'left' }}>Student Name</th>
+                        {classReport.subjects.map(sub => (
+                          <th key={sub} style={{ padding: 7, border: '1px solid #334155' }}>
+                            {sub} ({markScale === '30' && !sub.toUpperCase().includes('HIFZ') && !sub.toUpperCase().includes('MIDTERM') ? '30' : '100'})
+                          </th>
+                        ))}
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>Total ({markScale === '30' ? classReport.maxFinal : classReport.maxRaw})</th>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>%</th>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>Rank</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {classReport.rows.map(r => {
+                        const mapToUse = markScale === '30' ? r.subMap30 : r.subMap100;
+                        const totToUse = markScale === '30' ? r.finalTotal : r.rawTotal;
+                        return (
+                          <tr key={r.adm_no}>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', color: '#64748b' }}>{r.roll}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', color: '#475569' }}>{r.adm_no}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'left', fontWeight: 700 }}>{r.name}</td>
+                            {classReport.subjects.map(sub => {
+                              const val = mapToUse[sub];
+                              return (
+                                <td key={sub} style={{ padding: 7, border: '1px solid #e2e8f0' }}>
+                                  {val !== undefined && val !== null ? <span style={{ fontWeight: 600 }}>{val}</span> : <span style={{ color: '#dc2626', fontStyle: 'italic', fontSize: 10 }}>Pending</span>}
+                                </td>
+                              );
+                            })}
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 800, color: '#2563eb' }}>{totToUse}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 700 }}>{r.perc}%</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 800 }}>#{r.rank}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* DETAILED SUBJECT W1-W4 + OUT OF 30 TABLE */
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                    <thead style={{ background: '#1e293b', color: '#fff' }}>
+                      <tr>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>Roll</th>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>Adm No</th>
+                        <th style={{ padding: 7, border: '1px solid #334155', textAlign: 'left' }}>Student Name</th>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>W1 (15)</th>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>W2 (20)</th>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>W3 (25)</th>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>W4 (40)</th>
+                        <th style={{ padding: 7, border: '1px solid #334155' }}>Total (100)</th>
+                        <th style={{ padding: 7, border: '1px solid #334155', background: '#1d4ed8' }}>Out of 30</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {classReport.rows.map(r => {
+                        const d = r.detailMap[selectedSubject] || {};
+                        const cell = v => (v !== undefined && v !== null && v !== '' ? <span style={{ fontWeight: 600 }}>{v}</span> : <span style={{ color: '#dc2626', fontStyle: 'italic', fontSize: 10 }}>Pending</span>);
+                        return (
+                          <tr key={r.adm_no}>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', color: '#64748b' }}>{r.roll}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', color: '#475569' }}>{r.adm_no}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'left', fontWeight: 700 }}>{r.name}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0' }}>{cell(d.w1)}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0' }}>{cell(d.w2)}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0' }}>{cell(d.w3)}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0' }}>{cell(d.w4)}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 700 }}>{cell(d.total)}</td>
+                            <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 800, color: '#1d4ed8', background: '#eff6ff' }}>{cell(d.final30)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              <ExportBar
+                onPDF={() => downloadPDF('nhia-class-report', `Class_${classReport.className}_${selectedSubject}.pdf`, true)}
+                onJPEG={() => downloadJPEG('nhia-class-report', `Class_${classReport.className}_${selectedSubject}.jpg`)}
+                onExcel={() => {
+                  if (selectedSubject === 'ALL') {
+                    downloadCSV(
+                      `Class_${classReport.className}_OutOf${markScale}.csv`,
+                      ['Roll No', 'Adm No', 'Student Name', ...classReport.subjects, `Total (${markScale === '30' ? classReport.maxFinal : classReport.maxRaw})`, '%', 'Rank'],
+                      classReport.rows.map(r => {
+                        const mapToUse = markScale === '30' ? r.subMap30 : r.subMap100;
+                        const totToUse = markScale === '30' ? r.finalTotal : r.rawTotal;
+                        return [r.roll, r.adm_no, r.name, ...classReport.subjects.map(sub => mapToUse[sub] ?? 'Pending'), totToUse, `${r.perc}%`, r.rank];
+                      })
+                    );
+                  } else {
+                    downloadCSV(
+                      `Class_${classReport.className}_${selectedSubject}_W1_W4.csv`,
+                      ['Roll No', 'Adm No', 'Student Name', 'W1 (15)', 'W2 (20)', 'W3 (25)', 'W4 (40)', 'Total (100)', 'Out of 30'],
+                      classReport.rows.map(r => {
+                        const d = r.detailMap[selectedSubject] || {};
+                        return [r.roll, r.adm_no, r.name, d.w1 ?? 'Pending', d.w2 ?? 'Pending', d.w3 ?? 'Pending', d.w4 ?? 'Pending', d.total ?? 'Pending', d.final30 ?? 'Pending'];
+                      })
+                    );
+                  }
+                }}
+              />
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ================================================= */}
+      {/* TAB 2: PENDING TRACKER (W1, W2, W3, W4 WISE)      */}
+      {/* ================================================= */}
+      {tab === 'pending' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select value={pendingClass} onChange={e => setPendingClass(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}>
+              <option value="">-- Filter by Class --</option>
+              {classes.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <button onClick={() => checkPending('class')} style={{ padding: '0 16px', borderRadius: 10, border: 'none', background: '#1e293b', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>SEARCH</button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select value={pendingTeacher} onChange={e => setPendingTeacher(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}>
+              <option value="">-- Filter by Teacher --</option>
+              {teachers.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <button onClick={() => checkPending('teacher')} style={{ padding: '0 16px', borderRadius: 10, border: 'none', background: '#1e293b', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>SEARCH</button>
+          </div>
+
+          <button onClick={() => checkPending('all')} disabled={loading} style={{ width: '100%', padding: 13, borderRadius: 12, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontWeight: 800, fontSize: 12, cursor: 'pointer' }}>
+            {loading ? 'CHECKING...' : 'VIEW CAMPUS-WIDE PENDING (W1–W4)'}
+          </button>
+
+          {pendingList && (
+            <>
+              <div id="nhia-pending-report" style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{pendingTitle}</h4>
+                  <span style={{ fontSize: 11, fontWeight: 700, background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: 8 }}>
+                    {pendingList.length} Pending
+                  </span>
+                </div>
+
+                {pendingList.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 20, color: '#16a34a', fontWeight: 700, fontSize: 13 }}>
+                    ✅ Ellaa W1–W4 markukalum enter cheythittund!
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                      <thead style={{ background: '#f8fafc' }}>
+                        <tr>
+                          <th style={{ padding: 7, borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>Class</th>
+                          <th style={{ padding: 7, borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>Subject</th>
+                          <th style={{ padding: 7, borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>Teacher</th>
+                          <th style={{ padding: 7, borderBottom: '1px solid #e2e8f0' }}>W1</th>
+                          <th style={{ padding: 7, borderBottom: '1px solid #e2e8f0' }}>W2</th>
+                          <th style={{ padding: 7, borderBottom: '1px solid #e2e8f0' }}>W3</th>
+                          <th style={{ padding: 7, borderBottom: '1px solid #e2e8f0' }}>W4</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingList.map(p => (
+                          <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: 7, fontWeight: 700, textAlign: 'left' }}>{p.class_name}</td>
+                            <td style={{ padding: 7, fontWeight: 600, textAlign: 'left' }}>{p.subject_name}</td>
+                            <td style={{ padding: 7, color: '#475569', textAlign: 'left' }}>{p.staff_name}</td>
+                            {p.isHifz ? (
+                              <td colSpan={4} style={{ padding: 7 }}>
+                                <WorkBadge done={p.wc.total} total={p.totalSt} /> <span style={{ fontSize: 10, color: '#64748b' }}>(Total)</span>
+                              </td>
+                            ) : (
+                              <>
+                                <td style={{ padding: 7 }}><WorkBadge done={p.wc.w1} total={p.totalSt} /></td>
+                                <td style={{ padding: 7 }}><WorkBadge done={p.wc.w2} total={p.totalSt} /></td>
+                                <td style={{ padding: 7 }}><WorkBadge done={p.wc.w3} total={p.totalSt} /></td>
+                                <td style={{ padding: 7 }}><WorkBadge done={p.wc.w4} total={p.totalSt} /></td>
+                              </>
+                            )}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {pendingList.length > 0 && (
+                <ExportBar
+                  onPDF={() => downloadPDF('nhia-pending-report', 'NHIA_Pending_W1_W4.pdf', true)}
+                  onJPEG={() => downloadJPEG('nhia-pending-report', 'NHIA_Pending_W1_W4.jpg')}
+                  onExcel={() => downloadCSV(
+                    'NHIA_Pending_W1_W4.csv',
+                    ['Class', 'Subject', 'Teacher', 'Total Students', 'W1 Entered', 'W2 Entered', 'W3 Entered', 'W4 Entered'],
+                    pendingList.map(p => [p.class_name, p.subject_name, p.staff_name, p.totalSt, p.wc.w1, p.wc.w2, p.wc.w3, p.wc.w4])
+                  )}
+                />
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ================================================= */}
+      {/* TAB 3: PERFORMANCE EVALUATION                     */}
       {/* ================================================= */}
       {tab === 'performance' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <button
-            onClick={generatePerformance}
-            disabled={loading}
-            style={{
-              width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#10b981', color: '#fff',
-              fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              boxShadow: '0 4px 12px rgba(16,185,129,0.25)'
-            }}
-          >
+          <button onClick={generatePerformance} disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#10b981', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
             <Trophy size={16} /> {loading ? 'GENERATING...' : 'GENERATE CAMPUS PERFORMANCE REPORT'}
           </button>
 
           {perfData && (
             <>
               <div id="nhia-perf-report" style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #cbd5e1' }}>
-                <h3 style={{ textAlign: 'center', fontSize: 18, fontWeight: 900, marginBottom: 14, letterSpacing: 0.5 }}>
-                  NHIA PERFORMANCE EVALUATION
-                </h3>
+                <h3 style={{ textAlign: 'center', fontSize: 18, fontWeight: 900, marginBottom: 14 }}>NHIA PERFORMANCE EVALUATION</h3>
 
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#047857', borderBottom: '2px solid #10b981', paddingBottom: 4, marginBottom: 8 }}>
-                  🏆 Best Performing Classes
-                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#047857', borderBottom: '2px solid #10b981', paddingBottom: 4, marginBottom: 8 }}>🏆 Best Performing Classes</div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 18 }}>
                   <thead>
                     <tr style={{ background: '#f8fafc', textAlign: 'left' }}>
@@ -397,9 +676,7 @@ export default function ReportsModule({ onBack }) {
                   </tbody>
                 </table>
 
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#1d4ed8', borderBottom: '2px solid #3b82f6', paddingBottom: 4, marginBottom: 8 }}>
-                  🌟 Top 10 Students (Campus)
-                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#1d4ed8', borderBottom: '2px solid #3b82f6', paddingBottom: 4, marginBottom: 8 }}>🌟 Top 10 Students (Campus)</div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 18 }}>
                   <thead>
                     <tr style={{ background: '#f8fafc', textAlign: 'left' }}>
@@ -413,9 +690,7 @@ export default function ReportsModule({ onBack }) {
                     {perfData.top10.map((s, i) => (
                       <tr key={s.adm_no}>
                         <td style={{ border: '1px solid #cbd5e1', padding: 7, fontWeight: 700 }}>{i + 1} {medal(i)}</td>
-                        <td style={{ border: '1px solid #cbd5e1', padding: 7, fontWeight: 700 }}>
-                          {s.name} <span style={{ color: '#64748b', fontWeight: 500 }}>({s.adm_no})</span>
-                        </td>
+                        <td style={{ border: '1px solid #cbd5e1', padding: 7, fontWeight: 700 }}>{s.name} <span style={{ color: '#64748b', fontWeight: 500 }}>({s.adm_no})</span></td>
                         <td style={{ border: '1px solid #cbd5e1', padding: 7 }}>{s.class_name}</td>
                         <td style={{ border: '1px solid #cbd5e1', padding: 7, fontWeight: 800, color: '#16a34a' }}>{s.perc}%</td>
                       </tr>
@@ -423,9 +698,7 @@ export default function ReportsModule({ onBack }) {
                   </tbody>
                 </table>
 
-                <div style={{ fontSize: 14, fontWeight: 800, color: '#b91c1c', borderBottom: '2px solid #ef4444', paddingBottom: 4, marginBottom: 8 }}>
-                  📉 Needs Attention (Bottom 10 Students)
-                </div>
+                <div style={{ fontSize: 14, fontWeight: 800, color: '#b91c1c', borderBottom: '2px solid #ef4444', paddingBottom: 4, marginBottom: 8 }}>📉 Needs Attention (Bottom 10 Students)</div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
                     <tr style={{ background: '#fef2f2', textAlign: 'left' }}>
@@ -437,9 +710,7 @@ export default function ReportsModule({ onBack }) {
                   <tbody>
                     {perfData.bottom10.map(s => (
                       <tr key={s.adm_no}>
-                        <td style={{ border: '1px solid #fca5a5', padding: 7, fontWeight: 700 }}>
-                          {s.name} <span style={{ color: '#64748b', fontWeight: 500 }}>({s.adm_no})</span>
-                        </td>
+                        <td style={{ border: '1px solid #fca5a5', padding: 7, fontWeight: 700 }}>{s.name} <span style={{ color: '#64748b', fontWeight: 500 }}>({s.adm_no})</span></td>
                         <td style={{ border: '1px solid #fca5a5', padding: 7 }}>{s.class_name}</td>
                         <td style={{ border: '1px solid #fca5a5', padding: 7, fontWeight: 800, color: '#dc2626' }}>{s.perc}%</td>
                       </tr>
@@ -449,256 +720,15 @@ export default function ReportsModule({ onBack }) {
               </div>
 
               <ExportBar
-                onPDF={() => downloadPDF('nhia-perf-report', 'NHIA_Performance_Evaluation.pdf', 'portrait')}
+                onPDF={() => downloadPDF('nhia-perf-report', 'NHIA_Performance_Evaluation.pdf')}
                 onJPEG={() => downloadJPEG('nhia-perf-report', 'NHIA_Performance_Evaluation.jpg')}
                 onExcel={() => downloadCSV(
                   'NHIA_Full_Campus_Rank_List.csv',
-                  ['Rank', 'Adm No', 'Name', 'Class', 'Scored', 'Max Marks', 'Percentage'],
+                  ['Rank', 'Adm No', 'Name', 'Class', 'Scored (Out of 30)', 'Max Marks', 'Percentage'],
                   perfData.allRanked.map(s => [s.rank, s.adm_no, s.name, s.class_name, s.scored, s.maxM, `${s.perc}%`])
                 )}
-                excelLabel="RANK EXCEL"
+                excelLabel="RANK LIST"
               />
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ================================================= */}
-      {/* TAB 2: CLASS REPORT (OUT OF 30 & OUT OF 100)      */}
-      {/* ================================================= */}
-      {tab === 'class' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select
-              value={selectedClass}
-              onChange={e => setSelectedClass(e.target.value)}
-              style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 600 }}
-            >
-              <option value="">-- Select Class --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button
-              onClick={generateClassReport}
-              disabled={loading}
-              style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
-            >
-              {loading ? '...' : 'GENERATE'}
-            </button>
-          </div>
-
-          {/* Out of 30 vs Out of 100 Toggle */}
-          <div style={{ display: 'flex', background: '#e2e8f0', padding: 3, borderRadius: 10, gap: 4 }}>
-            <button
-              onClick={() => setMarkMode('30')}
-              style={{
-                flex: 1, padding: '8px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                background: markMode === '30' ? '#2e44d2' : 'transparent',
-                color: markMode === '30' ? '#fff' : '#475569'
-              }}
-            >
-              Out of 30 (CCE Mark List)
-            </button>
-            <button
-              onClick={() => setMarkMode('100')}
-              style={{
-                flex: 1, padding: '8px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                background: markMode === '100' ? '#2e44d2' : 'transparent',
-                color: markMode === '100' ? '#fff' : '#475569'
-              }}
-            >
-              Out of 100 (Raw Total)
-            </button>
-          </div>
-
-          {classReport && (
-            <>
-              <div id="nhia-class-report" style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14, overflowX: 'auto' }}>
-                <div style={{ textAlign: 'center', marginBottom: 12 }}>
-                  <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
-                    {classReport.className} — {markMode === '30' ? 'CCE MARK LIST (OUT OF 30)' : 'RAW MARK LIST (OUT OF 100)'}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#64748b' }}>Noorul Hidaya Islamic Academy • Academic Year 2026–27</div>
-                </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                  <thead style={{ background: '#1e293b', color: '#fff' }}>
-                    <tr>
-                      <th style={{ padding: 7, border: '1px solid #334155' }}>Roll</th>
-                      <th style={{ padding: 7, border: '1px solid #334155' }}>Adm No</th>
-                      <th style={{ padding: 7, border: '1px solid #334155', textAlign: 'left' }}>Student Name</th>
-                      {classReport.subjects.map(sub => {
-                        const isHifz = sub.toUpperCase().includes('HIFZ') || sub.toUpperCase().includes('MIDTERM');
-                        const maxTag = markMode === '30' ? (isHifz ? '100' : '30') : '100';
-                        return (
-                          <th key={sub} style={{ padding: 7, border: '1px solid #334155' }}>
-                            {sub} ({maxTag})
-                          </th>
-                        );
-                      })}
-                      <th style={{ padding: 7, border: '1px solid #334155' }}>
-                        Total ({markMode === '30' ? classReport.maxFinal30 : classReport.maxRaw100})
-                      </th>
-                      <th style={{ padding: 7, border: '1px solid #334155' }}>%</th>
-                      <th style={{ padding: 7, border: '1px solid #334155' }}>Rank</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {classReport.rows.map(r => {
-                      const activeMap = markMode === '30' ? r.subMap30 : r.subMap100;
-                      const activeTotal = markMode === '30' ? r.finalTotal30 : r.rawTotal100;
-                      return (
-                        <tr key={r.adm_no} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                          <td style={{ padding: 7, border: '1px solid #e2e8f0', color: '#64748b' }}>{r.rollNo}</td>
-                          <td style={{ padding: 7, border: '1px solid #e2e8f0', color: '#475569' }}>{r.adm_no}</td>
-                          <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'left', fontWeight: 700 }}>{r.name}</td>
-                          {classReport.subjects.map(sub => {
-                            const val = activeMap[sub];
-                            return (
-                              <td key={sub} style={{ padding: 7, border: '1px solid #e2e8f0' }}>
-                                {val !== undefined && val !== null ? (
-                                  <span style={{ fontWeight: 600 }}>{val}</span>
-                                ) : (
-                                  <span style={{ color: '#dc2626', fontStyle: 'italic', fontSize: 10 }}>Pending</span>
-                                )}
-                              </td>
-                            );
-                          })}
-                          <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 800, color: '#2563eb' }}>{activeTotal}</td>
-                          <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 700 }}>{r.perc}%</td>
-                          <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 800 }}>#{r.rank}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <ExportBar
-                onPDF={() => downloadPDF('nhia-class-report', `Class_${classReport.className}_OutOf${markMode}.pdf`, 'landscape')}
-                onJPEG={() => downloadJPEG('nhia-class-report', `Class_${classReport.className}_OutOf${markMode}.jpg`)}
-                onExcel={() => {
-                  const activeKey = markMode === '30' ? 'subMap30' : 'subMap100';
-                  const totalKey = markMode === '30' ? 'finalTotal30' : 'rawTotal100';
-                  const maxVal = markMode === '30' ? classReport.maxFinal30 : classReport.maxRaw100;
-                  downloadCSV(
-                    `Class_${classReport.className}_OutOf${markMode}.csv`,
-                    ['Roll No', 'Adm No', 'Student Name', ...classReport.subjects, `Total (${maxVal})`, '%', 'Rank'],
-                    classReport.rows.map(r => [
-                      r.rollNo,
-                      r.adm_no,
-                      r.name,
-                      ...classReport.subjects.map(sub => r[activeKey][sub] ?? 'Pending'),
-                      r[totalKey],
-                      `${r.perc}%`,
-                      r.rank
-                    ])
-                  );
-                }}
-              />
-            </>
-          )}
-        </div>
-      )}
-
-      {/* ================================================= */}
-      {/* TAB 3: PENDING MARK ENTRY TRACKER                 */}
-      {/* ================================================= */}
-      {tab === 'pending' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select
-              value={pendingClass}
-              onChange={e => setPendingClass(e.target.value)}
-              style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}
-            >
-              <option value="">-- Filter by Class --</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <button onClick={() => checkPending('class')} style={{ padding: '0 16px', borderRadius: 10, border: 'none', background: '#1e293b', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-              SEARCH
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8 }}>
-            <select
-              value={pendingTeacher}
-              onChange={e => setPendingTeacher(e.target.value)}
-              style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}
-            >
-              <option value="">-- Filter by Teacher --</option>
-              {teachers.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <button onClick={() => checkPending('teacher')} style={{ padding: '0 16px', borderRadius: 10, border: 'none', background: '#1e293b', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-              SEARCH
-            </button>
-          </div>
-
-          <button
-            onClick={() => checkPending('all')}
-            disabled={loading}
-            style={{ width: '100%', padding: 13, borderRadius: 12, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', fontWeight: 800, fontSize: 12, cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}
-          >
-            {loading ? 'CHECKING...' : 'VIEW CAMPUS-WIDE PENDING REPORTS'}
-          </button>
-
-          {pendingList && (
-            <>
-              <div id="nhia-pending-report" style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                  <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{pendingTitle}</h4>
-                  <span style={{ fontSize: 11, fontWeight: 700, background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: 8 }}>
-                    {pendingList.length} Pending
-                  </span>
-                </div>
-
-                {pendingList.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: 20, color: '#16a34a', fontWeight: 700, fontSize: 13 }}>
-                    ✅ Ellaa markukalum enter cheythittund! Pending onnumilla.
-                  </div>
-                ) : (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                      <thead style={{ background: '#f8fafc', textAlign: 'left' }}>
-                        <tr>
-                          <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Class</th>
-                          <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Subject</th>
-                          <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Teacher</th>
-                          <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {pendingList.map(p => (
-                          <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                            <td style={{ padding: 8, fontWeight: 700 }}>{p.class_name}</td>
-                            <td style={{ padding: 8, fontWeight: 600 }}>{p.subject_name}</td>
-                            <td style={{ padding: 8, color: '#475569' }}>{p.staff_name}</td>
-                            <td style={{ padding: 8 }}>
-                              <span style={{
-                                fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 6,
-                                background: p.status === 'Not Started' ? '#fee2e2' : '#fef3c7',
-                                color: p.status === 'Not Started' ? '#dc2626' : '#d97706'
-                              }}>
-                                {p.status} ({p.entered}/{p.totalSt})
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-
-              {pendingList.length > 0 && (
-                <ExportBar
-                  onPDF={() => downloadPDF('nhia-pending-report', 'NHIA_Pending_Marks.pdf', 'portrait')}
-                  onJPEG={() => downloadJPEG('nhia-pending-report', 'NHIA_Pending_Marks.jpg')}
-                  onExcel={() => downloadCSV(
-                    'NHIA_Pending_Marks.csv',
-                    ['Class', 'Subject', 'Teacher', 'Entered', 'Total Students', 'Pending', 'Status'],
-                    pendingList.map(p => [p.class_name, p.subject_name, p.staff_name, p.entered, p.totalSt, p.pending, p.status])
-                  )}
-                />
-              )}
             </>
           )}
         </div>
