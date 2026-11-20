@@ -36,9 +36,9 @@ export default function StaffAppraisalModule({ onBack, user }) {
   }, []);
 
   async function loadStaff() {
-    const { data } = await supabase.from('staff').select('name');
+    const { data } = await supabase.from('staff').select('name').order('name');
     if (data && data.length > 0) {
-      setStaffList(data.map(d => d.full_name).filter(Boolean));
+      setStaffList(data.map(d => d.name).filter(Boolean));
     }
   }
 
@@ -62,7 +62,7 @@ export default function StaffAppraisalModule({ onBack, user }) {
 
   async function handleSave(e) {
     e.preventDefault();
-    if (!form.staff_name.trim()) return alert('സ്റ്റാഫിന്റെ പേര് നൽകുക!');
+    if (!form.staff_name.trim()) return alert('സ്റ്റാഫിന്റെ പേര് തിരഞ്ഞെടുക്കുക!');
     setLoading(true); setMsg('');
 
     const { error } = await supabase.from('staff_appraisals').insert({
@@ -151,17 +151,17 @@ export default function StaffAppraisalModule({ onBack, user }) {
         <form onSubmit={handleSave} style={{ background: '#fff', padding: 16, borderRadius: 16, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
             <label style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>Staff Name</label>
-            <input
+            <select
               required
-              list="staff-options"
               value={form.staff_name}
               onChange={e => setForm({ ...form, staff_name: e.target.value })}
-              placeholder="സ്റ്റാഫിന്റെ പേര് തിരഞ്ഞെടുക്കുകയോ ടൈപ്പ് ചെയ്യുകയോ ചെയ്യുക"
-              style={{ width: '100%', padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 4 }}
-            />
-            <datalist id="staff-options">
-              {staffList.map(name => <option key={name} value={name} />)}
-            </datalist>
+              style={{ width: '100%', padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 4, background: '#fff' }}
+            >
+              <option value="">-- സ്റ്റാഫിന്റെ പേര് തിരഞ്ഞെടുക്കുക --</option>
+              {staffList.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
           </div>
 
           <div>
