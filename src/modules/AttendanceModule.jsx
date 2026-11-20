@@ -12,24 +12,24 @@ const DEFAULT_SESSIONS = [
   'Maghrib / Isha Prayer',
   'Night Study',
   'Special Program',
-  'Custom...'
+  'Custom'
 ];
 
 export default function AttendanceModule({ onBack, user }) {
   const isAdmin = ['admin', 'coordinator'].includes(user?.role);
-  const [mainTab, setMainTab] = useState('spot'); // 'spot' | 'monthly'
+  const [mainTab, setMainTab] = useState('spot');
   const [classes, setClasses] = useState([]);
   const [staffList, setStaffList] = useState([]);
   const [classTeachers, setClassTeachers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
-  // Admin Class Teacher Assignment State
+  // Class Teacher Assignment State
   const [assignClass, setAssignClass] = useState('');
   const [assignStaff, setAssignStaff] = useState('');
 
-  // Spot Attendance State
-  const [spotView, setSpotView] = useState('take'); // 'take' | 'history'
+  // Session Attendance State
+  const [spotView, setSpotView] = useState('take');
   const [spotDate, setSpotDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [spotSession, setSpotSession] = useState('Friday Register');
   const [customSession, setCustomSession] = useState('');
@@ -77,7 +77,6 @@ export default function AttendanceModule({ onBack, user }) {
     }
   }
 
-  // Filter classes allowed for Monthly Ledger
   const uId = String(user?.staff_id || user?.id || '').trim().toLowerCase();
   const uName = String(user?.name || '').trim().toLowerCase();
 
@@ -91,9 +90,8 @@ export default function AttendanceModule({ onBack, user }) {
         })
         .map(ct => ct.class_name);
 
-  // Admin: Assign Class Teacher
   async function handleAssignClassTeacher() {
-    if (!assignClass || !assignStaff) return alert('Class-um Teacher-um select cheyyuka!');
+    if (!assignClass || !assignStaff) return alert('Select both class and teacher.');
     const staffObj = staffList.find(s => s.staff_name === assignStaff);
     setLoading(true);
     setMsg('');
@@ -109,9 +107,9 @@ export default function AttendanceModule({ onBack, user }) {
 
     setLoading(false);
     if (error) {
-      setMsg('❌ Error: ' + error.message);
+      setMsg('Error: ' + error.message);
     } else {
-      setMsg(`✅ ${assignClass} Class Teacher aayi ${assignStaff}-ne assign cheythu!`);
+      setMsg(`${assignStaff} assigned to ${assignClass}.`);
       setAssignClass('');
       setAssignStaff('');
       loadInitialData();
@@ -119,23 +117,20 @@ export default function AttendanceModule({ onBack, user }) {
   }
 
   async function removeClassTeacher(clsName) {
-    if (!window.confirm(`${clsName} class teacher assignment remove cheyyano?`)) return;
+    if (!window.confirm(`Remove class teacher assignment for ${clsName}?`)) return;
     await supabase.from('class_teachers').delete().eq('class_name', clsName);
     loadInitialData();
   }
 
-  const activeSessionName = spotSession === 'Custom...' ? customSession.trim() : spotSession;
+  const activeSessionName = spotSession === 'Custom' ? customSession.trim() : spotSession;
 
-  // ==========================================
-  // SPOT ATTENDANCE FUNCTIONS
-  // ==========================================
   async function loadSpotStudents(clsParam, dateParam, sessParam) {
     const targetCls = clsParam || spotClass;
     const targetDate = dateParam || spotDate;
     const targetSess = sessParam || activeSessionName;
 
     if (!targetCls || !targetDate || !targetSess) {
-      return alert('Date, Session, Class ellam select cheyyuka!');
+      return alert('Select date, session, and class.');
     }
 
     setLoading(true);
@@ -159,7 +154,7 @@ export default function AttendanceModule({ onBack, user }) {
     setLoading(false);
 
     if (attData && attData.length > 0) {
-      setMsg(`✏️ Existing attendance loaded (${targetDate} - ${targetSess}). Edit cheythu Save cheyyaam.`);
+      setMsg(`Existing record loaded (${targetDate} - ${targetSess}).`);
     }
   }
 
@@ -188,8 +183,8 @@ export default function AttendanceModule({ onBack, user }) {
       .upsert(rows, { onConflict: 'session_date,session_name,adm_no' });
 
     setLoading(false);
-    if (error) setMsg('❌ Error: ' + error.message);
-    else setMsg(`✅ ${spotClass} (${activeSessionName}) attendance save aayi!`);
+    if (error) setMsg('Error: ' + error.message);
+    else setMsg(`Attendance saved for ${spotClass} (${activeSessionName}).`);
   }
 
   async function loadSpotHistory() {
@@ -202,7 +197,7 @@ export default function AttendanceModule({ onBack, user }) {
       .limit(1000);
 
     setLoading(false);
-    if (error) return setMsg('❌ Error: ' + error.message);
+    if (error) return setMsg('Error: ' + error.message);
 
     const grouped = {};
     (data || []).forEach(r => {
@@ -228,7 +223,7 @@ export default function AttendanceModule({ onBack, user }) {
     if (DEFAULT_SESSIONS.includes(h.session)) {
       setSpotSession(h.session);
     } else {
-      setSpotSession('Custom...');
+      setSpotSession('Custom');
       setCustomSession(h.session);
     }
     setSpotClass(h.className);
@@ -241,33 +236,30 @@ export default function AttendanceModule({ onBack, user }) {
     const leaves = spotStudents.filter(s => spotMap[s.adm_no] === 'L');
     const presentCount = spotStudents.filter(s => spotMap[s.adm_no] === 'P').length;
 
-    let text = `*NHIA ATTENDANCE REPORT*\n`;
-    text += `📅 Date: ${spotDate}\n`;
-    text += `📌 Session: ${activeSessionName}\n`;
-    text += `🏫 Class: ${spotClass}\n`;
-    text += `✅ Present: ${presentCount} | ❌ Absent: ${absentees.length} | 🟡 Leave: ${leaves.length}\n\n`;
+    let text = `NHIA ATTENDANCE REPORT\n`;
+    text += `Date: ${spotDate}\n`;
+    text += `Session: ${activeSessionName}\n`;
+    text += `Class: ${spotClass}\n`;
+    text += `Present: ${presentCount} | Absent: ${absentees.length} | Leave: ${leaves.length}\n\n`;
 
     if (absentees.length > 0) {
-      text += `*❌ ABSENTEES:*\n`;
+      text += `ABSENTEES:\n`;
       absentees.forEach((s, i) => { text += `${i + 1}. ${s.name} (${s.adm_no})\n`; });
     } else {
-      text += `✅ *All Students Present!*\n`;
+      text += `All students present.\n`;
     }
 
     if (leaves.length > 0) {
-      text += `\n*🟡 ON LEAVE:*\n`;
+      text += `\nON LEAVE:\n`;
       leaves.forEach((s, i) => { text += `${i + 1}. ${s.name} (${s.adm_no})\n`; });
     }
 
     navigator.clipboard.writeText(text);
-    setMsg('📋 WhatsApp Absentees Report copy cheythu!');
+    setMsg('Absentees report copied to clipboard.');
   }
 
-  // ==========================================
-  // MONTHLY HARD-LEDGER FUNCTIONS
-  // ==========================================
   async function loadMonthlyStudents() {
-    if (!monthlyClass || !monthYear) return alert('Month-um Class-um select cheyyuka!');
+    if (!monthlyClass || !monthYear) return alert('Select month and class.');
     setLoading(true);
     setMsg('');
 
@@ -292,7 +284,7 @@ export default function AttendanceModule({ onBack, user }) {
 
   async function saveMonthlyLedger() {
     const wd = Number(workingDays);
-    if (!wd || wd <= 0) return alert('Total Working Days krithyamaayi nalkuka!');
+    if (!wd || wd <= 0) return alert('Enter valid total working days.');
     setLoading(true);
     setMsg('');
 
@@ -306,13 +298,13 @@ export default function AttendanceModule({ onBack, user }) {
         month_year: monthYear,
         working_days: wd,
         present_days: Number(val),
-        entered_by: user?.name || 'Class Teacher'
+        entered_by: user?.name || 'Staff'
       });
     });
 
     if (rows.length === 0) {
       setLoading(false);
-      return setMsg('⚠️ Save cheyyaan present days onnum nalkiyittilla.');
+      return setMsg('No present days entered to save.');
     }
 
     const { error } = await supabase
@@ -320,11 +312,10 @@ export default function AttendanceModule({ onBack, user }) {
       .upsert(rows, { onConflict: 'adm_no,month_year' });
 
     setLoading(false);
-    if (error) setMsg('❌ Error: ' + error.message);
-    else setMsg(`✅ ${rows.length} kuttikalude ${monthYear} monthly attendance save aayi!`);
+    if (error) setMsg('Error: ' + error.message);
+    else setMsg(`Monthly ledger saved for ${rows.length} students (${monthYear}).`);
   }
 
-  // Export Helpers
   function downloadCSV(filename, headers, rows) {
     const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -358,7 +349,7 @@ export default function AttendanceModule({ onBack, user }) {
         <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
           <ChevronLeft size={20} />
         </button>
-        <h2 style={{ fontSize: 20, fontWeight: 800 }}>Attendance Portal</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 800 }}>Attendance</h2>
       </div>
 
       {/* MAIN MODE SWITCHER */}
@@ -371,7 +362,7 @@ export default function AttendanceModule({ onBack, user }) {
             color: mainTab === 'spot' ? '#2e44d2' : '#475569'
           }}
         >
-          ⚡ Spot / Register (All Staff)
+          Session Register
         </button>
         <button
           onClick={() => { setMainTab('monthly'); setMsg(''); }}
@@ -381,7 +372,7 @@ export default function AttendanceModule({ onBack, user }) {
             color: mainTab === 'monthly' ? '#2e44d2' : '#475569'
           }}
         >
-          📒 Monthly Ledger (Class Tr)
+          Monthly Ledger
         </button>
       </div>
 
@@ -391,9 +382,7 @@ export default function AttendanceModule({ onBack, user }) {
         </div>
       )}
 
-      {/* ================================================= */}
-      {/* TYPE 1: SPOT / SESSION ATTENDANCE                 */}
-      {/* ================================================= */}
+      {/* SESSION REGISTER */}
       {mainTab === 'spot' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', gap: 8 }}>
@@ -416,21 +405,21 @@ export default function AttendanceModule({ onBack, user }) {
                   <div>
                     <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Class</label>
                     <select value={spotClass} onChange={e => setSpotClass(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4, background: '#fff' }}>
-                      <option value="">-- Select --</option>
+                      <option value="">Select</option>
                       {classes.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                 </div>
 
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Session / Register Type</label>
+                  <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Session</label>
                   <select value={spotSession} onChange={e => setSpotSession(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4, background: '#fff' }}>
                     {DEFAULT_SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
 
-                {spotSession === 'Custom...' && (
-                  <input value={customSession} onChange={e => setCustomSession(e.target.value)} placeholder="Session peru nalkuka..." style={{ padding: 10, borderRadius: 10, border: '1px solid #93c5fd', fontSize: 13 }} />
+                {spotSession === 'Custom' && (
+                  <input value={customSession} onChange={e => setCustomSession(e.target.value)} placeholder="Enter session name" style={{ padding: 10, borderRadius: 10, border: '1px solid #93c5fd', fontSize: 13 }} />
                 )}
 
                 <button onClick={() => loadSpotStudents()} disabled={loading} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
@@ -482,12 +471,12 @@ export default function AttendanceModule({ onBack, user }) {
                   </div>
 
                   <button onClick={saveSpotAttendance} disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                    <Save size={16} /> {loading ? 'Saving...' : 'SAVE ATTENDANCE'}
+                    <Save size={16} /> {loading ? 'Saving...' : 'Save Attendance'}
                   </button>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
                     <button onClick={copyWhatsAppAbsentees} style={{ padding: 10, borderRadius: 10, border: 'none', background: '#25d366', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                      <Copy size={13} /> WhatsApp
+                      <Copy size={13} /> Copy Report
                     </button>
                     <button onClick={() => downloadPDF('nhia-spot-sheet', `${spotClass}_${activeSessionName}_${spotDate}.pdf`)} style={{ padding: 10, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                       <Download size={13} /> PDF
@@ -503,14 +492,14 @@ export default function AttendanceModule({ onBack, user }) {
             <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
               <h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>Recent Attendance Sessions</h4>
               {historyList.length === 0 ? (
-                <p style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 16 }}>Attendance records onnumilla.</p>
+                <p style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 16 }}>No attendance records found.</p>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {historyList.map((h, i) => (
                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc' }}>
                       <div>
                         <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{h.className} — {h.session}</div>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>📅 {h.date} • By: {h.takenBy}</div>
+                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{h.date} • {h.takenBy}</div>
                         <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, display: 'flex', gap: 8 }}>
                           <span style={{ color: '#16a34a' }}>P: {h.P}</span>
                           <span style={{ color: '#dc2626' }}>A: {h.A}</span>
@@ -527,29 +516,26 @@ export default function AttendanceModule({ onBack, user }) {
         </div>
       )}
 
-      {/* ================================================= */}
-      {/* TYPE 2: MONTHLY HARD-LEDGER (CLASS TEACHER ONLY)  */}
-      {/* ================================================= */}
+      {/* MONTHLY LEDGER */}
       {mainTab === 'monthly' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* ADMIN PANEL: ASSIGN CLASS TEACHERS */}
           {isAdmin && (
             <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #c7d2fe', display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: '#2e44d2', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <UserCheck size={16} /> Assign Class Teachers (Admin)
+                <UserCheck size={16} /> Assign Class Teachers
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 8 }}>
                 <select value={assignClass} onChange={e => setAssignClass(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
-                  <option value="">-- Class --</option>
+                  <option value="">Class</option>
                   {classes.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <select value={assignStaff} onChange={e => setAssignStaff(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
-                  <option value="">-- Select Teacher --</option>
+                  <option value="">Select Teacher</option>
                   {staffList.map(s => <option key={s.staff_name} value={s.staff_name}>{s.staff_name}</option>)}
                 </select>
               </div>
               <button onClick={handleAssignClassTeacher} disabled={loading} style={{ padding: 9, borderRadius: 8, border: 'none', background: '#1e293b', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                Assign Class Teacher
+                Assign
               </button>
 
               {classTeachers.length > 0 && (
@@ -565,10 +551,9 @@ export default function AttendanceModule({ onBack, user }) {
             </div>
           )}
 
-          {/* LOCK CHECK FOR NON-CLASS TEACHERS */}
           {myAssignedClasses.length === 0 ? (
-            <div style={{ background: '#fff', padding: 24, borderRadius: 14, border: '1px solid #fecaca', textAlign: 'center', color: '#dc2626', fontSize: 13, fontWeight: 700 }}>
-              🔒 നിങ്ങൾക്ക് ഇതുവരെ ക്ലാസ്സ് ടീച്ചർ ചുമതല നൽകിയിട്ടില്ല. Monthly Ledger അപ്‌ഡേറ്റ് ചെയ്യാൻ അഡ്മിനുമായി ബന്ധപ്പെടുക.
+            <div style={{ background: '#fff', padding: 24, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center', color: '#64748b', fontSize: 13, fontWeight: 600 }}>
+              No class assigned for monthly ledger entry. Contact admin.
             </div>
           ) : (
             <>
@@ -579,15 +564,15 @@ export default function AttendanceModule({ onBack, user }) {
                     <input type="month" value={monthYear} onChange={e => setMonthYear(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4 }} />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Assigned Class</label>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Class</label>
                     <select value={monthlyClass} onChange={e => setMonthlyClass(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4, background: '#fff' }}>
-                      <option value="">-- Select --</option>
+                      <option value="">Select</option>
                       {myAssignedClasses.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                   </div>
                 </div>
                 <button onClick={loadMonthlyStudents} disabled={loading} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                  {loading ? 'Loading...' : 'Load Class Register'}
+                  {loading ? 'Loading...' : 'Load Register'}
                 </button>
               </div>
 
@@ -628,7 +613,7 @@ export default function AttendanceModule({ onBack, user }) {
                                   step="0.5"
                                   value={val}
                                   onChange={e => {
-                                    if (e.target.value !== '' && Number(e.target.value) > wd) return alert(`Working days (${wd})-il kooduthal nalkaan kazhiyilla!`);
+                                    if (e.target.value !== '' && Number(e.target.value) > wd) return alert(`Cannot exceed working days (${wd}).`);
                                     setMonthlyMap(prev => ({ ...prev, [s.adm_no]: e.target.value }));
                                   }}
                                   style={{ width: 65, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1', fontWeight: 700 }}
@@ -645,12 +630,12 @@ export default function AttendanceModule({ onBack, user }) {
                   </div>
 
                   <button onClick={saveMonthlyLedger} disabled={loading} style={{ width: '100%', padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
-                    <Save size={16} /> {loading ? 'Saving...' : 'SAVE MONTHLY LEDGER'}
+                    <Save size={16} /> {loading ? 'Saving...' : 'Save Monthly Ledger'}
                   </button>
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                     <button onClick={() => downloadPDF('nhia-monthly-sheet', `Monthly_Attendance_${monthlyClass}_${monthYear}.pdf`)} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                      <Download size={14} /> Download PDF
+                      <Download size={14} /> PDF
                     </button>
                     <button
                       onClick={() => downloadCSV(
@@ -665,7 +650,7 @@ export default function AttendanceModule({ onBack, user }) {
                       )}
                       style={{ padding: 11, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
                     >
-                      <FileSpreadsheet size={14} /> Download Excel
+                      <FileSpreadsheet size={14} /> Excel
                     </button>
                   </div>
                 </>
