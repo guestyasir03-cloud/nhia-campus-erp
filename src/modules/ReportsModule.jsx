@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, Trophy, FileSpreadsheet, Download, AlertCircle, Search, Users } from 'lucide-react';
+import { ChevronLeft, Trophy, FileSpreadsheet, Download, Image as ImageIcon } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
 
@@ -16,6 +16,7 @@ export default function ReportsModule({ onBack }) {
 
   // 2. Class Report State
   const [selectedClass, setSelectedClass] = useState('');
+  const [markMode, setMarkMode] = useState('30'); // '30' (CCE Out of 30) | '100' (Raw Out of 100)
   const [classReport, setClassReport] = useState(null);
 
   // 3. Pending Tracker State
@@ -37,7 +38,9 @@ export default function ReportsModule({ onBack }) {
     if (ta) setTeachers([...new Set(ta.map(t => t.staff_name).filter(Boolean))].sort());
   }
 
-  // Helper: CSV Download
+  // ==========================================
+  // EXPORT HELPERS (EXCEL CSV, PDF, JPEG)
+  // ==========================================
   function downloadCSV(filename, headers, rows) {
     const csvContent = [
       headers.join(','),
@@ -52,17 +55,34 @@ export default function ReportsModule({ onBack }) {
     URL.revokeObjectURL(url);
   }
 
-  // Helper: PDF Download
-  function downloadPDF(elementId, filename) {
+  function downloadPDF(elementId, filename, orientation = 'portrait') {
     const el = document.getElementById(elementId);
     if (!el) return;
     html2pdf().set({
       margin: 8,
       filename,
       image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation }
     }).from(el).save();
+  }
+
+  async function downloadJPEG(elementId, filename) {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    try {
+      const canvas = await html2pdf()
+        .set({ html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' } })
+        .from(el)
+        .toCanvas()
+        .get('canvas');
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/jpeg', 0.95);
+      link.click();
+    } catch (err) {
+      alert('JPEG download error: ' + err.message);
+    }
   }
 
   // ==========================================
@@ -80,7 +100,6 @@ export default function ReportsModule({ onBack }) {
     const mkList = marks || [];
     const asgList = assignments || [];
 
-    // Class-wise max marks calculation
     const classSubjects = {};
     asgList.forEach(a => {
       if (!a.class_name || !a.subject_name || a.subject_name === 'EMPTY') return;
@@ -103,7 +122,6 @@ export default function ReportsModule({ onBack }) {
       classMaxMap[cls] = maxM || 100;
     });
 
-    // Student-wise scores
     const marksByAdm = {};
     mkList.forEach(m => {
       if (!marksByAdm[m.adm_no]) marksByAdm[m.adm_no] = 0;
@@ -124,11 +142,9 @@ export default function ReportsModule({ onBack }) {
       };
     });
 
-    // Rank all students
     const rankedStudents = [...studentScores].sort((a, b) => b.perc - a.perc);
     rankedStudents.forEach((s, i) => { s.rank = i + 1; });
 
-    // Best Performing Classes
     const classAgg = {};
     studentScores.forEach(s => {
       if (!s.class_name) return;
@@ -153,14 +169,14 @@ export default function ReportsModule({ onBack }) {
   }
 
   // ==========================================
-  // 2. GENERATE CLASS REPORT
+  // 2. GENERATE CLASS REPORT (OUT OF 30 & 100)
   // ==========================================
   async function generateClassReport() {
     if (!selectedClass) return alert('Class select cheyyuka!');
     setLoading(true);
 
     const [{ data: stData }, { data: mkData }, { data: asgData }] = await Promise.all([
-      supabase.from('students').select('adm_no, name').eq('class_name', selectedClass).order('name'),
+      supabase.from('students').select('adm_no, name').eq('class_name', selectedClass).order('adm_no'),
       supabase.from('marks').select('*').eq('class_name', selectedClass),
       supabase.from('teacher_assignments').select('subject_name').eq('class_name', selectedClass)
     ]);
@@ -174,30 +190,54 @@ export default function ReportsModule({ onBack }) {
     });
     const subjects = [...subSet].sort();
 
-    let maxFinal = 0;
+    let maxFinal30 = 0;
+    let maxRaw100 = 0;
     subjects.forEach(sub => {
       const isHifz = sub.toUpperCase().includes('HIFZ') || sub.toUpperCase().includes('MIDTERM');
-      maxFinal += isHifz ? 100 : 30;
+      maxFinal30 += isHifz ? 100 : 30;
+      maxRaw100 += 100;
     });
 
-    const rows = (stData || []).map(s => {
+    const rows = (stData || []).map((s, idx) => {
       const myMarks = (mkData || []).filter(m => m.adm_no === s.adm_no);
-      const subMap = {};
-      let finalTotal = 0;
+      const subMap30 = {};
+      const subMap100 = {};
+      let finalTotal30 = 0;
+      let rawTotal100 = 0;
+
       myMarks.forEach(m => {
-        subMap[m.subject.trim()] = m.total;
-        finalTotal += Number(m.final_mark) || 0;
+        const subKey = m.subject.trim();
+        const isHifz = subKey.toUpperCase().includes('HIFZ') || subKey.toUpperCase().includes('MIDTERM');
+        const raw = Number(m.total) || 0;
+        const cce30 = m.final_mark !== null && m.final_mark !== undefined
+          ? Number(m.final_mark)
+          : isHifz ? raw : Number(((raw / 100) * 30).toFixed(2));
+
+        subMap30[subKey] = cce30;
+        subMap100[subKey] = raw;
+        finalTotal30 += cce30;
+        rawTotal100 += raw;
       });
-      const perc = maxFinal > 0 ? ((finalTotal / maxFinal) * 100).toFixed(1) : '0.0';
-      return { adm_no: s.adm_no, name: s.name, subMap, finalTotal: Number(finalTotal.toFixed(2)), perc };
+
+      const perc = maxFinal30 > 0 ? ((finalTotal30 / maxFinal30) * 100).toFixed(1) : '0.0';
+      return {
+        rollNo: idx + 1,
+        adm_no: s.adm_no,
+        name: s.name,
+        subMap30,
+        subMap100,
+        finalTotal30: Number(finalTotal30.toFixed(2)),
+        rawTotal100: Number(rawTotal100.toFixed(2)),
+        perc
+      };
     });
 
-    const sorted = [...rows].sort((a, b) => b.finalTotal - a.finalTotal);
+    const sorted = [...rows].sort((a, b) => b.finalTotal30 - a.finalTotal30);
     const rankMap = {};
     sorted.forEach((r, idx) => { rankMap[r.adm_no] = idx + 1; });
     rows.forEach(r => { r.rank = rankMap[r.adm_no]; });
 
-    setClassReport({ className: selectedClass, subjects, maxFinal, rows });
+    setClassReport({ className: selectedClass, subjects, maxFinal30, maxRaw100, rows });
     setLoading(false);
   }
 
@@ -240,7 +280,7 @@ export default function ReportsModule({ onBack }) {
         const status = entered === 0 ? 'Not Started' : pending > 0 ? 'Partial' : 'Completed';
         return { ...a, totalSt, entered, pending, status };
       })
-      .filter(r => r.pending > 0); // Pending ullava maathram kaanikkunnu
+      .filter(r => r.pending > 0);
 
     setPendingTitle(
       mode === 'class'
@@ -254,6 +294,30 @@ export default function ReportsModule({ onBack }) {
   }
 
   const medal = idx => (idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '');
+
+  // Reusable 3-Button Export Bar (PDF | JPEG | EXCEL)
+  const ExportBar = ({ onPDF, onJPEG, onExcel, excelLabel = 'EXCEL (CSV)' }) => (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+      <button
+        onClick={onPDF}
+        style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+      >
+        <Download size={14} /> PDF
+      </button>
+      <button
+        onClick={onJPEG}
+        style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+      >
+        <ImageIcon size={14} /> JPEG
+      </button>
+      <button
+        onClick={onExcel}
+        style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+      >
+        <FileSpreadsheet size={14} /> {excelLabel}
+      </button>
+    </div>
+  );
 
   return (
     <div>
@@ -311,7 +375,6 @@ export default function ReportsModule({ onBack }) {
                   NHIA PERFORMANCE EVALUATION
                 </h3>
 
-                {/* Best Performing Classes */}
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#047857', borderBottom: '2px solid #10b981', paddingBottom: 4, marginBottom: 8 }}>
                   🏆 Best Performing Classes
                 </div>
@@ -334,7 +397,6 @@ export default function ReportsModule({ onBack }) {
                   </tbody>
                 </table>
 
-                {/* Top 10 Students */}
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#1d4ed8', borderBottom: '2px solid #3b82f6', paddingBottom: 4, marginBottom: 8 }}>
                   🌟 Top 10 Students (Campus)
                 </div>
@@ -361,7 +423,6 @@ export default function ReportsModule({ onBack }) {
                   </tbody>
                 </table>
 
-                {/* Bottom 10 Students */}
                 <div style={{ fontSize: 14, fontWeight: 800, color: '#b91c1c', borderBottom: '2px solid #ef4444', paddingBottom: 4, marginBottom: 8 }}>
                   📉 Needs Attention (Bottom 10 Students)
                 </div>
@@ -387,32 +448,23 @@ export default function ReportsModule({ onBack }) {
                 </table>
               </div>
 
-              {/* EXPORT BUTTONS */}
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button
-                  onClick={() => downloadPDF('nhia-perf-report', 'NHIA_Performance_Evaluation.pdf')}
-                  style={{ flex: 1, padding: 12, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                >
-                  <Download size={15} /> DOWNLOAD PDF
-                </button>
-                <button
-                  onClick={() => downloadCSV(
-                    'NHIA_Full_Campus_Rank_List.csv',
-                    ['Rank', 'Adm No', 'Name', 'Class', 'Scored', 'Max Marks', 'Percentage'],
-                    perfData.allRanked.map(s => [s.rank, s.adm_no, s.name, s.class_name, s.scored, s.maxM, `${s.perc}%`])
-                  )}
-                  style={{ flex: 1, padding: 12, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-                >
-                  <FileSpreadsheet size={15} /> FULL RANK LIST (EXCEL)
-                </button>
-              </div>
+              <ExportBar
+                onPDF={() => downloadPDF('nhia-perf-report', 'NHIA_Performance_Evaluation.pdf', 'portrait')}
+                onJPEG={() => downloadJPEG('nhia-perf-report', 'NHIA_Performance_Evaluation.jpg')}
+                onExcel={() => downloadCSV(
+                  'NHIA_Full_Campus_Rank_List.csv',
+                  ['Rank', 'Adm No', 'Name', 'Class', 'Scored', 'Max Marks', 'Percentage'],
+                  perfData.allRanked.map(s => [s.rank, s.adm_no, s.name, s.class_name, s.scored, s.maxM, `${s.perc}%`])
+                )}
+                excelLabel="RANK EXCEL"
+              />
             </>
           )}
         </div>
       )}
 
       {/* ================================================= */}
-      {/* TAB 2: CLASS REPORT                               */}
+      {/* TAB 2: CLASS REPORT (OUT OF 30 & OUT OF 100)      */}
       {/* ================================================= */}
       {tab === 'class' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -430,70 +482,118 @@ export default function ReportsModule({ onBack }) {
               disabled={loading}
               style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#2563eb', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
             >
-              {loading ? '...' : 'GENERATE REPORT'}
+              {loading ? '...' : 'GENERATE'}
+            </button>
+          </div>
+
+          {/* Out of 30 vs Out of 100 Toggle */}
+          <div style={{ display: 'flex', background: '#e2e8f0', padding: 3, borderRadius: 10, gap: 4 }}>
+            <button
+              onClick={() => setMarkMode('30')}
+              style={{
+                flex: 1, padding: '8px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                background: markMode === '30' ? '#2e44d2' : 'transparent',
+                color: markMode === '30' ? '#fff' : '#475569'
+              }}
+            >
+              Out of 30 (CCE Mark List)
+            </button>
+            <button
+              onClick={() => setMarkMode('100')}
+              style={{
+                flex: 1, padding: '8px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                background: markMode === '100' ? '#2e44d2' : 'transparent',
+                color: markMode === '100' ? '#fff' : '#475569'
+              }}
+            >
+              Out of 100 (Raw Total)
             </button>
           </div>
 
           {classReport && (
             <>
               <div id="nhia-class-report" style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14, overflowX: 'auto' }}>
-                <h3 style={{ textAlign: 'center', color: '#2563eb', fontSize: 17, fontWeight: 800, marginBottom: 12 }}>
-                  Class Report - {classReport.className}
-                </h3>
+                <div style={{ textAlign: 'center', marginBottom: 12 }}>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>
+                    {classReport.className} — {markMode === '30' ? 'CCE MARK LIST (OUT OF 30)' : 'RAW MARK LIST (OUT OF 100)'}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Noorul Hidaya Islamic Academy • Academic Year 2026–27</div>
+                </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   <thead style={{ background: '#1e293b', color: '#fff' }}>
                     <tr>
-                      <th style={{ padding: 8 }}>Adm No</th>
-                      <th style={{ padding: 8, textAlign: 'left' }}>Student Name</th>
-                      {classReport.subjects.map(sub => <th key={sub} style={{ padding: 8 }}>{sub}</th>)}
-                      <th style={{ padding: 8 }}>Final ({classReport.maxFinal})</th>
-                      <th style={{ padding: 8 }}>%</th>
-                      <th style={{ padding: 8 }}>Rank</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Roll</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Adm No</th>
+                      <th style={{ padding: 7, border: '1px solid #334155', textAlign: 'left' }}>Student Name</th>
+                      {classReport.subjects.map(sub => {
+                        const isHifz = sub.toUpperCase().includes('HIFZ') || sub.toUpperCase().includes('MIDTERM');
+                        const maxTag = markMode === '30' ? (isHifz ? '100' : '30') : '100';
+                        return (
+                          <th key={sub} style={{ padding: 7, border: '1px solid #334155' }}>
+                            {sub} ({maxTag})
+                          </th>
+                        );
+                      })}
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>
+                        Total ({markMode === '30' ? classReport.maxFinal30 : classReport.maxRaw100})
+                      </th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>%</th>
+                      <th style={{ padding: 7, border: '1px solid #334155' }}>Rank</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {classReport.rows.map(r => (
-                      <tr key={r.adm_no} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                        <td style={{ padding: 8, color: '#475569' }}>{r.adm_no}</td>
-                        <td style={{ padding: 8, textAlign: 'left', fontWeight: 700 }}>{r.name}</td>
-                        {classReport.subjects.map(sub => {
-                          const val = r.subMap[sub];
-                          return (
-                            <td key={sub} style={{ padding: 8 }}>
-                              {val !== undefined && val !== null ? (
-                                <span style={{ fontWeight: 600 }}>{val}</span>
-                              ) : (
-                                <span style={{ color: '#dc2626', fontStyle: 'italic', fontSize: 11 }}>Pending</span>
-                              )}
-                            </td>
-                          );
-                        })}
-                        <td style={{ padding: 8, fontWeight: 800, color: '#2563eb' }}>{r.finalTotal}</td>
-                        <td style={{ padding: 8, fontWeight: 700 }}>{r.perc}%</td>
-                        <td style={{ padding: 8, fontWeight: 800 }}>#{r.rank}</td>
-                      </tr>
-                    ))}
+                    {classReport.rows.map(r => {
+                      const activeMap = markMode === '30' ? r.subMap30 : r.subMap100;
+                      const activeTotal = markMode === '30' ? r.finalTotal30 : r.rawTotal100;
+                      return (
+                        <tr key={r.adm_no} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', color: '#64748b' }}>{r.rollNo}</td>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', color: '#475569' }}>{r.adm_no}</td>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', textAlign: 'left', fontWeight: 700 }}>{r.name}</td>
+                          {classReport.subjects.map(sub => {
+                            const val = activeMap[sub];
+                            return (
+                              <td key={sub} style={{ padding: 7, border: '1px solid #e2e8f0' }}>
+                                {val !== undefined && val !== null ? (
+                                  <span style={{ fontWeight: 600 }}>{val}</span>
+                                ) : (
+                                  <span style={{ color: '#dc2626', fontStyle: 'italic', fontSize: 10 }}>Pending</span>
+                                )}
+                              </td>
+                            );
+                          })}
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 800, color: '#2563eb' }}>{activeTotal}</td>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 700 }}>{r.perc}%</td>
+                          <td style={{ padding: 7, border: '1px solid #e2e8f0', fontWeight: 800 }}>#{r.rank}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
 
-              <button
-                onClick={() => downloadCSV(
-                  `Class_Report_${classReport.className}.csv`,
-                  ['Adm No', 'Student Name', ...classReport.subjects, `Final (${classReport.maxFinal})`, '%', 'Rank'],
-                  classReport.rows.map(r => [
-                    r.adm_no,
-                    r.name,
-                    ...classReport.subjects.map(sub => r.subMap[sub] ?? 'Pending'),
-                    r.finalTotal,
-                    `${r.perc}%`,
-                    r.rank
-                  ])
-                )}
-                style={{ width: '100%', padding: 13, borderRadius: 12, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-              >
-                <FileSpreadsheet size={16} /> DOWNLOAD AS EXCEL (CSV)
-              </button>
+              <ExportBar
+                onPDF={() => downloadPDF('nhia-class-report', `Class_${classReport.className}_OutOf${markMode}.pdf`, 'landscape')}
+                onJPEG={() => downloadJPEG('nhia-class-report', `Class_${classReport.className}_OutOf${markMode}.jpg`)}
+                onExcel={() => {
+                  const activeKey = markMode === '30' ? 'subMap30' : 'subMap100';
+                  const totalKey = markMode === '30' ? 'finalTotal30' : 'rawTotal100';
+                  const maxVal = markMode === '30' ? classReport.maxFinal30 : classReport.maxRaw100;
+                  downloadCSV(
+                    `Class_${classReport.className}_OutOf${markMode}.csv`,
+                    ['Roll No', 'Adm No', 'Student Name', ...classReport.subjects, `Total (${maxVal})`, '%', 'Rank'],
+                    classReport.rows.map(r => [
+                      r.rollNo,
+                      r.adm_no,
+                      r.name,
+                      ...classReport.subjects.map(sub => r[activeKey][sub] ?? 'Pending'),
+                      r[totalKey],
+                      `${r.perc}%`,
+                      r.rank
+                    ])
+                  );
+                }}
+              />
             </>
           )}
         </div>
@@ -504,7 +604,6 @@ export default function ReportsModule({ onBack }) {
       {/* ================================================= */}
       {tab === 'pending' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* Class Filter */}
           <div style={{ display: 'flex', gap: 8 }}>
             <select
               value={pendingClass}
@@ -519,7 +618,6 @@ export default function ReportsModule({ onBack }) {
             </button>
           </div>
 
-          {/* Teacher Filter */}
           <div style={{ display: 'flex', gap: 8 }}>
             <select
               value={pendingTeacher}
@@ -534,7 +632,6 @@ export default function ReportsModule({ onBack }) {
             </button>
           </div>
 
-          {/* Campus-Wide Button */}
           <button
             onClick={() => checkPending('all')}
             disabled={loading}
@@ -544,51 +641,65 @@ export default function ReportsModule({ onBack }) {
           </button>
 
           {pendingList && (
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{pendingTitle}</h4>
-                <span style={{ fontSize: 11, fontWeight: 700, background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: 8 }}>
-                  {pendingList.length} Pending
-                </span>
+            <>
+              <div id="nhia-pending-report" style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <h4 style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{pendingTitle}</h4>
+                  <span style={{ fontSize: 11, fontWeight: 700, background: '#fef2f2', color: '#dc2626', padding: '4px 8px', borderRadius: 8 }}>
+                    {pendingList.length} Pending
+                  </span>
+                </div>
+
+                {pendingList.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 20, color: '#16a34a', fontWeight: 700, fontSize: 13 }}>
+                    ✅ Ellaa markukalum enter cheythittund! Pending onnumilla.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead style={{ background: '#f8fafc', textAlign: 'left' }}>
+                        <tr>
+                          <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Class</th>
+                          <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Subject</th>
+                          <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Teacher</th>
+                          <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pendingList.map(p => (
+                          <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: 8, fontWeight: 700 }}>{p.class_name}</td>
+                            <td style={{ padding: 8, fontWeight: 600 }}>{p.subject_name}</td>
+                            <td style={{ padding: 8, color: '#475569' }}>{p.staff_name}</td>
+                            <td style={{ padding: 8 }}>
+                              <span style={{
+                                fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 6,
+                                background: p.status === 'Not Started' ? '#fee2e2' : '#fef3c7',
+                                color: p.status === 'Not Started' ? '#dc2626' : '#d97706'
+                              }}>
+                                {p.status} ({p.entered}/{p.totalSt})
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
-              {pendingList.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 20, color: '#16a34a', fontWeight: 700, fontSize: 13 }}>
-                  ✅ Ellaa markukalum enter cheythittund! Pending onnumilla.
-                </div>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead style={{ background: '#f8fafc', textAlign: 'left' }}>
-                      <tr>
-                        <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Class</th>
-                        <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Subject</th>
-                        <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Teacher</th>
-                        <th style={{ padding: 8, borderBottom: '1px solid #e2e8f0' }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pendingList.map(p => (
-                        <tr key={p.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                          <td style={{ padding: 8, fontWeight: 700 }}>{p.class_name}</td>
-                          <td style={{ padding: 8, fontWeight: 600 }}>{p.subject_name}</td>
-                          <td style={{ padding: 8, color: '#475569' }}>{p.staff_name}</td>
-                          <td style={{ padding: 8 }}>
-                            <span style={{
-                              fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 6,
-                              background: p.status === 'Not Started' ? '#fee2e2' : '#fef3c7',
-                              color: p.status === 'Not Started' ? '#dc2626' : '#d97706'
-                            }}>
-                              {p.status} ({p.entered}/{p.totalSt})
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              {pendingList.length > 0 && (
+                <ExportBar
+                  onPDF={() => downloadPDF('nhia-pending-report', 'NHIA_Pending_Marks.pdf', 'portrait')}
+                  onJPEG={() => downloadJPEG('nhia-pending-report', 'NHIA_Pending_Marks.jpg')}
+                  onExcel={() => downloadCSV(
+                    'NHIA_Pending_Marks.csv',
+                    ['Class', 'Subject', 'Teacher', 'Entered', 'Total Students', 'Pending', 'Status'],
+                    pendingList.map(p => [p.class_name, p.subject_name, p.staff_name, p.entered, p.totalSt, p.pending, p.status])
+                  )}
+                />
               )}
-            </div>
+            </>
           )}
         </div>
       )}
