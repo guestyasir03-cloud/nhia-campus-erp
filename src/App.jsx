@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
   Briefcase, Bell, BarChart3, Sliders, Home, User, ChevronLeft,
-  LogOut, Plus, Building, Library, Lock, GraduationCap
+  LogOut, Building, Library
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
+import ProfileAvatar from './components/ProfileAvatar';
 import StudentsModule from './modules/StudentsModule';
 import ExamsModule from './modules/ExamsModule';
 import AttendanceModule from './modules/AttendanceModule';
@@ -20,6 +21,7 @@ const ICON_MAP = {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
   Briefcase, Bell, BarChart3, Sliders, Library, Building
 };
+
 const DEFAULT_MODULES = [
   { id: 'examinations', name: 'Examinations', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'attendance', name: 'Attendance', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
@@ -76,9 +78,9 @@ const SUB_MENUS = {
 };
 
 export default function App() {
-  const [user, setUser] = useState(null); // { name, role, id, type: 'staff'|'student' }
+  const [user, setUser] = useState(null);
   const [rolePreview, setRolePreview] = useState('admin');
-  const [activeTab, setActiveTab] = useState('home'); // home | notices | account
+  const [activeTab, setActiveTab] = useState('home');
   const [activeModule, setActiveModule] = useState(null);
   const [modules, setModules] = useState(DEFAULT_MODULES);
   const [stats, setStats] = useState({ students: 0, staff: 0, attendance: '94%' });
@@ -87,13 +89,12 @@ export default function App() {
   const [resetting, setResetting] = useState(false);
 
   // Login State
-  const [loginMode, setLoginMode] = useState('staff'); // staff | student
+  const [loginMode, setLoginMode] = useState('staff');
   const [loginId, setLoginId] = useState('');
   const [loginPass, setLoginPass] = useState('');
   const [loginErr, setLoginErr] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // ഡാറ്റാബേസിൽ നിന്ന് മൊഡ്യൂളുകളും എണ്ണവും അക്കാദമിക് ഇയറും ലോഡ് ചെയ്യുന്നു
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     (async () => {
@@ -117,7 +118,6 @@ export default function App() {
     })();
   }, []);
 
-  // ലോഗിൻ ഫംഗ്ഷൻ
   async function handleLogin(e) {
     e.preventDefault();
     setLoginErr('');
@@ -153,8 +153,10 @@ export default function App() {
     }
   }
 
-  // മൊഡ്യൂൾ ഓൺ/ഓഫ് ചെയ്യാൻ (Settings)
   async function toggleModule(mod) {
+    if (mod.id === 'settings') {
+      return alert('Settings module cannot be disabled.');
+    }
     const updated = modules.map(m => m.id === mod.id ? { ...m, is_active: !m.is_active } : m);
     setModules(updated);
     if (isSupabaseConfigured) {
@@ -162,7 +164,6 @@ export default function App() {
     }
   }
 
- // പുതിയ മൊഡ്യൂൾ ചേർക്കാൻ (Settings)
   async function addNewModule(e) {
     e.preventDefault();
     if (!newModName.trim()) return;
@@ -182,7 +183,6 @@ export default function App() {
     }
   }
 
-  // Academic Year മാറ്റാൻ
   async function handleYearChange(newYear) {
     setAcademicYear(newYear);
     if (isSupabaseConfigured) {
@@ -190,7 +190,6 @@ export default function App() {
     }
   }
 
-  // Next Year Full Data Reset
   async function handleYearReset() {
     const confirmText = window.prompt(
       `WARNING: ${academicYear}-ലെ പഴയ Attendance, Marks, Finance, Activity, Announcements ഡാറ്റയെല്ലാം ഡിലീറ്റ് ആകും!\n\nകൺഫേം ചെയ്യാൻ "RESET" എന്ന് ടൈപ്പ് ചെയ്യുക:`
@@ -211,7 +210,7 @@ export default function App() {
     }
   }
 
-  // ലോഗിൻ സ്ക്രീൻ
+  // LOGIN SCREEN (With Phone Save Password Support)
   if (!user) {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -225,34 +224,41 @@ export default function App() {
           </div>
 
           <div style={{ display: 'flex', background: '#f1f5f9', padding: 4, borderRadius: 12, marginBottom: 20 }}>
-            <button onClick={() => setLoginMode('staff')} style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer', background: loginMode === 'staff' ? '#fff' : 'transparent', color: loginMode === 'staff' ? '#2e44d2' : '#64748b', boxShadow: loginMode === 'staff' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none' }}>
+            <button type="button" onClick={() => setLoginMode('staff')} style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer', background: loginMode === 'staff' ? '#fff' : 'transparent', color: loginMode === 'staff' ? '#2e44d2' : '#64748b', boxShadow: loginMode === 'staff' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none' }}>
               Staff / Admin
             </button>
-            <button onClick={() => setLoginMode('student')} style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer', background: loginMode === 'student' ? '#fff' : 'transparent', color: loginMode === 'student' ? '#2e44d2' : '#64748b', boxShadow: loginMode === 'student' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none' }}>
+            <button type="button" onClick={() => setLoginMode('student')} style={{ flex: 1, padding: '10px', borderRadius: 10, border: 'none', fontWeight: 600, fontSize: 13, cursor: 'pointer', background: loginMode === 'student' ? '#fff' : 'transparent', color: loginMode === 'student' ? '#2e44d2' : '#64748b', boxShadow: loginMode === 'student' ? '0 2px 6px rgba(0,0,0,0.06)' : 'none' }}>
               Student / Parent
             </button>
           </div>
 
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <form onSubmit={handleLogin} autoComplete="on" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
-                {loginMode === 'staff' ? 'User ID or Email' : 'Admission Number'}
+              <label htmlFor="nhia-username" style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                {loginMode === 'staff' ? 'Staff ID' : 'Admission Number'}
               </label>
               <input
+                id="nhia-username"
+                name="username"
+                type="text"
+                autoComplete="username"
                 required
                 value={loginId}
                 onChange={e => setLoginId(e.target.value)}
-                placeholder={loginMode === 'staff' ? 'e.g. admin or teacher@email.com' : 'e.g. 1024'}
+                placeholder={loginMode === 'staff' ? 'Enter Staff ID' : 'Enter Admission No'}
                 style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 6, fontSize: 14 }}
               />
             </div>
             <div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
-                {loginMode === 'staff' ? 'Password' : 'PIN (Default: 1234)'}
+              <label htmlFor="nhia-password" style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                {loginMode === 'staff' ? 'Password / PIN' : 'PIN'}
               </label>
               <input
-                required
+                id="nhia-password"
+                name="password"
                 type="password"
+                autoComplete="current-password"
+                required
                 value={loginPass}
                 onChange={e => setLoginPass(e.target.value)}
                 placeholder="••••••••"
@@ -266,8 +272,6 @@ export default function App() {
               {loading ? 'Signing in...' : 'Sign In'}
             </button>
           </form>
-
-         
         </div>
       </div>
     );
@@ -306,12 +310,11 @@ export default function App() {
       </header>
 
       <main style={{ padding: '4px 18px 20px' }}>
-        {/* SETTINGS / MODULE MANAGER VIEW */}
         {activeModule === 'students' ? (
           <StudentsModule onBack={() => setActiveModule(null)} />
         ) : activeModule === 'examinations' ? (
           <ExamsModule onBack={() => setActiveModule(null)} user={user} />
-       ) : activeModule === 'attendance' ? (
+        ) : activeModule === 'attendance' ? (
           <AttendanceModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'finance' ? (
           <FinanceModule onBack={() => setActiveModule(null)} user={user} />
@@ -335,7 +338,7 @@ export default function App() {
               </button>
               <h2 style={{ fontSize: 20, fontWeight: 800 }}>Settings</h2>
             </div>
-            {/* ACADEMIC YEAR & RESET CARD */}
+
             <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 18 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Academic Year & Reset</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
@@ -381,7 +384,8 @@ export default function App() {
                       onClick={() => toggleModule(mod)}
                       style={{
                         width: 44, height: 24, borderRadius: 20, border: 'none', cursor: 'pointer', position: 'relative',
-                        background: mod.is_active ? '#2e44d2' : '#cbd5e1', transition: '0.2s'
+                        background: mod.is_active ? '#2e44d2' : '#cbd5e1', transition: '0.2s',
+                        opacity: mod.id === 'settings' ? 0.5 : 1
                       }}
                     >
                       <span style={{
@@ -407,7 +411,6 @@ export default function App() {
             </form>
           </div>
         ) : activeModule ? (
-          /* SUB-MENU VIEW (Examinations, Attendance, Students, Finance, Activity, etc.) */
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
               <button onClick={() => setActiveModule(null)} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
@@ -438,11 +441,16 @@ export default function App() {
             </div>
           </div>
         ) : activeTab === 'account' ? (
-          /* ACCOUNT VIEW */
+          /* ACCOUNT VIEW WITH DP */
           <div style={{ background: '#fff', padding: 22, borderRadius: 18, border: '1px solid #e2e8f0' }}>
-            <h3 style={{ marginBottom: 12 }}>My Account</h3>
-            <p style={{ fontSize: 14, color: '#475569', marginBottom: 6 }}><b>Name:</b> {user.name}</p>
-            <p style={{ fontSize: 14, color: '#475569', marginBottom: 18 }}><b>Role:</b> {currentRole}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+              <ProfileAvatar user={user} size={64} />
+              <div>
+                <h3 style={{ margin: 0, fontSize: 18, color: '#0f172a' }}>{user.name}</h3>
+                <div style={{ fontSize: 13, color: '#64748b', textTransform: 'capitalize', marginTop: 2 }}>{currentRole}</div>
+                <div style={{ fontSize: 11, color: '#2e44d2', marginTop: 4 }}>Tap photo to change DP</div>
+              </div>
+            </div>
             <button
               onClick={async () => { if (isSupabaseConfigured) await supabase.auth.signOut(); setUser(null); setActiveTab('home'); }}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: 12, borderRadius: 12, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
@@ -451,23 +459,22 @@ export default function App() {
             </button>
           </div>
         ) : activeTab === 'notices' ? (
-          
-          /* NOTICES VIEW */
           <div style={{ background: '#fff', padding: 22, borderRadius: 18, border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginBottom: 12 }}>Campus Notices</h3>
             <p style={{ fontSize: 13, color: '#64748b' }}>പ്രത്യേക അറിയിപ്പുകൾ ഇവിടെ കാണാം.</p>
           </div>
         ) : (
-          /* HOME SCREEN (TILE GRID) */
+          /* HOME SCREEN WITH DP IN BANNER */
           <>
-            {/* HERO BANNER */}
-            <div style={{ background: '#2e44d2', color: '#fff', borderRadius: 18, padding: '22px 20px', marginBottom: 14, boxShadow: '0 8px 20px rgba(46,68,210,0.2)' }}>
-              <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>Good evening</div>
-              <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 6 }}>Welcome, {user.name}</div>
-              <div style={{ fontSize: 13, opacity: 0.9 }}>Academic Year {academicYear}</div>
+            <div style={{ background: '#2e44d2', color: '#fff', borderRadius: 18, padding: '20px', marginBottom: 14, boxShadow: '0 8px 20px rgba(46,68,210,0.2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 13, opacity: 0.85, marginBottom: 4 }}>Welcome</div>
+                <div style={{ fontSize: 21, fontWeight: 800, marginBottom: 6 }}>{user.name}</div>
+                <div style={{ fontSize: 13, opacity: 0.9 }}>Academic Year {academicYear}</div>
+              </div>
+              <ProfileAvatar user={user} size={56} />
             </div>
 
-            {/* 3 STAT CARDS */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
               <div style={{ background: '#fff', padding: '14px 12px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
                 <div style={{ fontSize: 20, fontWeight: 800, color: '#0f172a' }}>{stats.students}</div>
@@ -483,7 +490,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* 3-COLUMN TILE GRID */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               {visibleModules.map(mod => {
                 const Icon = ICON_MAP[mod.icon] || FileText;
