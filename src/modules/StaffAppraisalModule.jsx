@@ -172,6 +172,10 @@ export default function StaffAppraisalModule({ onBack, user }) {
   const [monEvidence, setMonEvidence] = useState('Direct observation');
   const [monConfidence, setMonConfidence] = useState('Moderate');
   const [monNotes, setMonNotes] = useState('');
+  const [monSubdomain, setMonSubdomain] = useState('T1');
+const [monLevel, setMonLevel] = useState('On Track');
+const [monFollowup, setMonFollowup] = useState('');
+const [monFilter, setMonFilter] = useState('ALL');
   const [monLogs, setMonLogs] = useState([]);
 
   // 2. Self-Assessment State (Parts I - XIII)
@@ -273,31 +277,35 @@ export default function StaffAppraisalModule({ onBack, user }) {
 
   // Save Monitoring Log
   async function addMonitoringLog(e) {
-    e.preventDefault();
-    if (!selectedStaffId || !monNotes.trim()) return alert('Select staff and enter observation notes.');
-    setLoading(true);
-    setMsg('');
+  e.preventDefault();
+  if (!selectedStaffId || !monNotes.trim()) return alert('Select staff and enter observation notes.');
+  setLoading(true);
+  setMsg('');
 
-    const { error } = await supabase.from('appraisal_monitoring').insert({
-      staff_id: selectedStaffId,
-      staff_name: activeStaffObj?.name || 'Staff',
-      academic_year: ACADEMIC_YEAR,
-      frequency: monFreq,
-      domain_code: monDomain,
-      evidence_type: monEvidence,
-      confidence: monConfidence,
-      notes: monNotes.trim(),
-      logged_by: user?.name || 'Supervisor'
-    });
+  const { error } = await supabase.from('appraisal_monitoring').insert({
+    staff_id: selectedStaffId,
+    staff_name: activeStaffObj?.name || 'Staff',
+    academic_year: ACADEMIC_YEAR,
+    frequency: monFreq,
+    domain_code: monDomain,
+    subdomain_code: monSubdomain,
+    evidence_type: monEvidence,
+    confidence: monConfidence,
+    response_level: monLevel,
+    followup_date: monFollowup || null,
+    notes: monNotes.trim(),
+    logged_by: user?.name || 'Supervisor'
+  });
 
-    setLoading(false);
-    if (error) setMsg('Error: ' + error.message);
-    else {
-      setMonNotes('');
-      setMsg('Monitoring evidence logged.');
-      loadStaffAppraisalData(selectedStaffId);
-    }
+  setLoading(false);
+  if (error) setMsg('Error: ' + error.message);
+  else {
+    setMonNotes('');
+    setMonFollowup('');
+    setMsg('Structured monitoring record logged.');
+    loadStaffAppraisalData(selectedStaffId);
   }
+}
 
   // Save Self-Assessment
   async function saveSelfAssessment(e) {
@@ -565,51 +573,144 @@ export default function StaffAppraisalModule({ onBack, user }) {
       )}
 
       {/* ================================================= */}
-      {/* TAB 2: CONTINUOUS MONITORING & EVIDENCE LOGS      */}
+      {/* ================================================= */}
+      {/* TAB 2: SYSTEMATIC MONITORING & EVIDENCE TRAIL     */}
       {/* ================================================= */}
       {tab === 'monitoring' && selectedStaffId && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* WORKFLOW PROGRESS BAR */}
+          <div style={{ background: '#fff', padding: 12, borderRadius: 12, border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, textAlign: 'center' }}>
+            <div style={{ padding: 6, borderRadius: 8, background: monLogs.length > 0 ? '#dcfce7' : '#f1f5f9' }}>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>1. Monitoring</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: monLogs.length > 0 ? '#15803d' : '#475569' }}>{monLogs.length} Logs</div>
+            </div>
+            <div style={{ padding: 6, borderRadius: 8, background: selfForm.declared ? '#dcfce7' : '#fef3c7' }}>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>2. Self-Form</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: selfForm.declared ? '#15803d' : '#b45309' }}>{selfForm.declared ? 'Submitted' : 'Pending'}</div>
+            </div>
+            <div style={{ padding: 6, borderRadius: 8, background: normalizedTotal > 0 ? '#dbeafe' : '#f1f5f9' }}>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>3. Scorecard</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: normalizedTotal > 0 ? '#1d4ed8' : '#475569' }}>{normalizedTotal > 0 ? `${normalizedTotal}/100` : 'Not Rated'}</div>
+            </div>
+          </div>
+
           {isAuthority && (
-            <form onSubmit={addMonitoringLog} style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Add Continuous Monitoring Record</div>
+            <form onSubmit={addMonitoringLog} style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 9 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Log Structured Monitoring Evidence</div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <select value={monFreq} onChange={e => setMonFreq(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
-                  {['Weekly', 'Monthly', 'Quarterly', 'Term'].map(f => <option key={f} value={f}>{f}</option>)}
-                </select>
-                <select value={monDomain} onChange={e => setMonDomain(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
-                  {DOMAINS.map(d => <option key={d.code} value={d.code}>{d.code}: {d.title.slice(0, 22)}...</option>)}
-                </select>
-                <select value={monEvidence} onChange={e => setMonEvidence(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
-                  {EVIDENCE_TYPES.map(ev => <option key={ev} value={ev}>{ev}</option>)}
-                </select>
-                <select value={monConfidence} onChange={e => setMonConfidence(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
-                  <option value="High">Confidence: High</option>
-                  <option value="Moderate">Confidence: Moderate</option>
-                  <option value="Limited">Confidence: Limited</option>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Cycle</label>
+                  <select value={monFreq} onChange={e => setMonFreq(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff', marginTop: 2 }}>
+                    {['Weekly', 'Monthly', 'Quarterly', 'Term'].map(f => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Domain</label>
+                  <select
+                    value={monDomain}
+                    onChange={e => {
+                      const dCode = e.target.value;
+                      setMonDomain(dCode);
+                      const dObj = DOMAINS.find(d => d.code === dCode);
+                      if (dObj?.subdomains?.[0]) setMonSubdomain(dObj.subdomains[0].code);
+                    }}
+                    style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff', marginTop: 2 }}
+                  >
+                    {DOMAINS.map(d => <option key={d.code} value={d.code}>{d.code}: {d.title.slice(0, 20)}...</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Subdomain Indicator</label>
+                <select value={monSubdomain} onChange={e => setMonSubdomain(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff', marginTop: 2 }}>
+                  {(DOMAINS.find(d => d.code === monDomain)?.subdomains || []).map(s => (
+                    <option key={s.code} value={s.code}>{s.code}: {s.title}</option>
+                  ))}
                 </select>
               </div>
-              <textarea required rows={2} value={monNotes} onChange={e => setMonNotes(e.target.value)} placeholder="Observed evidence, feedback, or follow-up note..." style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
-              <button type="submit" disabled={loading} style={{ padding: 10, borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                Log Evidence
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Evidence Type</label>
+                  <select value={monEvidence} onChange={e => setMonEvidence(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff', marginTop: 2 }}>
+                    {EVIDENCE_TYPES.map(ev => <option key={ev} value={ev}>{ev}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Confidence</label>
+                  <select value={monConfidence} onChange={e => setMonConfidence(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff', marginTop: 2 }}>
+                    <option value="High">High</option>
+                    <option value="Moderate">Moderate</option>
+                    <option value="Limited">Limited</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Status / Feedback Level (Sec 14)</label>
+                  <select value={monLevel} onChange={e => setMonLevel(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff', marginTop: 2, fontWeight: 700 }}>
+                    <option value="On Track">On Track / Positive</option>
+                    <option value="Level 1: Routine Feedback">L1: Routine Feedback</option>
+                    <option value="Level 2: Repeated Concern">L2: Repeated Concern</option>
+                    <option value="Level 3: Significant Concern">L3: Significant Concern</option>
+                    <option value="Level 4: Critical Concern">L4: Critical Concern</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>Follow-up Date (Optional)</label>
+                  <input type="date" value={monFollowup} onChange={e => setMonFollowup(e.target.value)} style={{ width: '100%', padding: 7, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, marginTop: 2 }} />
+                </div>
+              </div>
+
+              <textarea required rows={2} value={monNotes} onChange={e => setMonNotes(e.target.value)} placeholder="Specific observed fact, artefact verified, or action agreed..." style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
+              <button type="submit" disabled={loading} style={{ padding: 11, borderRadius: 9, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                Save Monitoring Record
               </button>
             </form>
           )}
 
+          {/* FILTERABLE EVIDENCE TRAIL */}
           <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>Evidence & Monitoring Trail ({monLogs.length})</div>
-            {monLogs.length === 0 ? (
-              <p style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 14 }}>No monitoring records logged yet.</p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 800 }}>Evidence Trail ({monLogs.filter(m => monFilter === 'ALL' || m.domain_code === monFilter).length})</div>
+              <select value={monFilter} onChange={e => setMonFilter(e.target.value)} style={{ padding: '4px 8px', borderRadius: 7, border: '1px solid #cbd5e1', fontSize: 11, fontWeight: 700 }}>
+                <option value="ALL">All Domains</option>
+                {DOMAINS.map(d => <option key={d.code} value={d.code}>{d.code}</option>)}
+              </select>
+            </div>
+
+            {monLogs.filter(m => monFilter === 'ALL' || m.domain_code === monFilter).length === 0 ? (
+              <p style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 14 }}>No monitoring records logged for this filter.</p>
             ) : (
-              monLogs.map(m => (
-                <div key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700, color: '#2e44d2', marginBottom: 3 }}>
-                    <span>{m.frequency} • {m.domain_code} • {m.evidence_type}</span>
-                    <span style={{ color: '#64748b' }}>{String(m.created_at).slice(0, 10)}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: '#0f172a' }}>{m.notes}</div>
-                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 3 }}>Confidence: {m.confidence} • By: {m.logged_by}</div>
-                </div>
-              ))
+              monLogs
+                .filter(m => monFilter === 'ALL' || m.domain_code === monFilter)
+                .map(m => {
+                  const isConcern = m.response_level && m.response_level !== 'On Track';
+                  return (
+                    <div key={m.id} style={{ padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#2e44d2' }}>
+                          {m.frequency} • {m.domain_code}{m.subdomain_code ? ` (${m.subdomain_code})` : ''}
+                        </span>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6,
+                          background: isConcern ? '#fee2e2' : '#dcfce7',
+                          color: isConcern ? '#dc2626' : '#15803d'
+                        }}>
+                          {m.response_level || 'On Track'}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: '#0f172a', marginBottom: 4 }}>{m.notes}</div>
+                      <div style={{ fontSize: 10, color: '#64748b' }}>
+                        {m.evidence_type} ({m.confidence}) • {String(m.created_at).slice(0, 10)} • By: {m.logged_by}
+                        {m.followup_date ? ` • Follow-up: ${m.followup_date}` : ''}
+                      </div>
+                    </div>
+                  );
+                })
             )}
           </div>
         </div>
