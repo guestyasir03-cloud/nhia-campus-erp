@@ -18,8 +18,10 @@ function formatTitleFromFilename(filename = '') {
 function buildPrintClone(el, mode = 'pdf', forceLandscape = null, rowSlice = null, pageInfo = null, filename = '') {
   const { colCount, isLandscape } = getTableInfo(el, forceLandscape);
 
-  const targetWidth = isLandscape
-    ? (mode === 'jpeg' ? 1000 : 1120)
+ const targetWidth = isLandscape
+    ? (colCount >= 11
+        ? Math.max(mode === 'jpeg' ? 1000 : 1120, colCount * 96)
+        : (mode === 'jpeg' ? 1000 : 1120))
     : (mode === 'jpeg' ? 540 : 794);
 
   const host = document.createElement('div');
@@ -60,12 +62,12 @@ function buildPrintClone(el, mode = 'pdf', forceLandscape = null, rowSlice = nul
     tbody tr:nth-child(even) {
       background: #f8fafc !important;
     }
-    th, td {
-      padding: ${isLandscape ? '6px 5px' : '8px 7px'} !important;
-      font-size: ${isLandscape ? '11px' : (mode === 'jpeg' ? '12.5px' : '12.5px')} !important;
+   th, td {
+      padding: ${isLandscape ? (colCount >= 11 ? '5px 4px' : '6px 5px') : '8px 7px'} !important;
+      font-size: ${isLandscape ? (colCount >= 11 ? '10px' : '11px') : '12.5px'} !important;
       line-height: 1.35 !important;
       border: 1px solid #e2e8f0 !important;
-      white-space: ${colCount > 12 ? 'nowrap' : 'normal'} !important;
+      white-space: normal !important;
       word-break: break-word;
     }
   `;
