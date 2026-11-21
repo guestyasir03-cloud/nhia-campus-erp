@@ -62,13 +62,19 @@ function buildPrintClone(el, mode = 'pdf', forceLandscape = null, rowSlice = nul
     tbody tr:nth-child(even) {
       background: #f8fafc !important;
     }
-  th, td {
-      padding: ${isLandscape ? (colCount >= 11 ? '5px 3px' : '6px 5px') : '8px 7px'} !important;
-      font-size: ${isLandscape ? (colCount >= 11 ? '11px' : '11.5px') : '12.5px'} !important;
+ th, td {
+      padding: ${isLandscape ? (colCount >= 11 ? '5px 4px' : '6px 5px') : '8px 7px'} !important;
+      font-size: ${isLandscape ? (colCount >= 11 ? '10.5px' : '11.5px') : '12.5px'} !important;
       line-height: 1.35 !important;
       border: 1px solid #e2e8f0 !important;
       white-space: normal !important;
-      word-break: break-word;
+      word-break: normal !important;
+    }
+    th:first-child, td:first-child,
+    th:nth-child(2), td:nth-child(2),
+    th:nth-last-child(1), td:nth-last-child(1),
+    th:nth-last-child(2), td:nth-last-child(2) {
+      white-space: nowrap !important;
     }
   `;
 
