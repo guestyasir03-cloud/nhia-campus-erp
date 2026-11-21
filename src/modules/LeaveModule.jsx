@@ -114,8 +114,17 @@ export default function LeaveModule({ user, onBack }) {
       .order('start_date', { ascending: false })
       .order('id', { ascending: false });
 
-    if (isStudent && user?.adm_no) {
-      leaveQuery = leaveQuery.eq('adm_no', String(user.adm_no));
+   if (isStudent) {
+      const adm = user?.adm_no || user?.username || user?.student_id;
+      if (adm) {
+        leaveQuery = leaveQuery.eq('adm_no', String(adm).trim());
+      } else if (user?.name) {
+        leaveQuery = leaveQuery.ilike('student_name', user.name.trim());
+      } else {
+        setLeaves([]);
+        setLoading(false);
+        return;
+      }
     }
 
     const [{ data: lvData }, { data: stData }] = await Promise.all([
