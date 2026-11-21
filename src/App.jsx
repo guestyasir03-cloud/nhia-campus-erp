@@ -51,8 +51,12 @@ const SUB_MENUS = {
 };
 
 export default function App() {
-  const [user, setUser] = useState(null);
-  const [rolePreview, setRolePreview] = useState('admin');
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('nhia_logged_user') || 'null'); } catch { return null; }
+  });
+  const [rolePreview, setRolePreview] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('nhia_logged_user') || 'null')?.role || 'admin'; } catch { return 'admin'; }
+  });
   const [activeTab, setActiveTab] = useState('home');
   const [activeModule, setActiveModule] = useState(null);
   // Mobile & Computer Back button support (Zero-Lag)
@@ -179,9 +183,14 @@ export default function App() {
           .eq('staff_id', loginId.trim())
           .eq('pin', loginPass.trim())
           .maybeSingle();
-        if (error || !staff) throw new Error('Staff ID-യോ PIN-ഓ തെറ്റാണ്!');
+       if (error || !staff) throw new Error('Staff ID-യോ PIN-ഓ തെറ്റാണ്!');
         const role = (staff.role || 'teacher').toLowerCase();
-        setUser({ id: staff.staff_id, name: staff.name, role, type: 'staff' });
+        const u = { id: staff.staff_id, name: staff.name, role, type: 'staff' };
+        localStorage.setItem('nhia_logged_user', JSON.stringify(u));
+        const creds = JSON.parse(localStorage.getItem('nhia_offline_creds') || '{}');
+        creds[`staff_${loginId.trim()}`] = { pin: loginPass.trim(), user: u };
+        localStorage.setItem('nhia_offline_creds', JSON.stringify(creds));
+        setUser(u);
         setRolePreview(role);
       } else {
         const { data: st, error } = await supabase
@@ -191,11 +200,25 @@ export default function App() {
           .eq('pin', loginPass.trim())
           .maybeSingle();
         if (error || !st) throw new Error('അഡ്മിഷൻ നമ്പറോ PIN-ഓ തെറ്റാണ്!');
-        setUser({ id: st.adm_no, name: st.name, role: 'student', class_name: st.class_name, type: 'student' });
+        const u = { id: st.adm_no, name: st.name, role: 'student', class_name: st.class_name, type: 'student' };
+        localStorage.setItem('nhia_logged_user', JSON.stringify(u));
+        const creds = JSON.parse(localStorage.getItem('nhia_offline_creds') || '{}');
+        creds[`student_${loginId.trim()}`] = { pin: loginPass.trim(), user: u };
+        localStorage.setItem('nhia_offline_creds', JSON.stringify(creds));
+        setUser(u);
         setRolePreview('student');
       }
     } catch (err) {
-      setLoginErr(err.message);
+      // Offline fallback login using previously saved credentials
+      const creds = JSON.parse(localStorage.getItem('nhia_offline_creds') || '{}');
+      const saved = creds[`${loginMode}_${loginId.trim()}`];
+      if (!navigator.onLine && saved && saved.pin === loginPass.trim()) {
+        localStorage.setItem('nhia_logged_user', JSON.stringify(saved.user));
+        setUser(saved.user);
+        setRolePreview(saved.user.role);
+      } else {
+        setLoginErr(!navigator.onLine ? 'ഓഫ്‌ലൈനിൽ കയറാൻ ആദ്യം ഒരിക്കൽ ഓൺലൈനിൽ ലോഗിൻ ചെയ്യണം!' : err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -596,7 +619,7 @@ export default function App() {
             <p style={{ fontSize: 14, color: '#475569', marginBottom: 6 }}><b>Name:</b> {user.name}</p>
             <p style={{ fontSize: 14, color: '#475569', marginBottom: 18 }}><b>Role:</b> {formatRoleLabel(currentRole)}</p>
             <button
-              onClick={async () => { if (isSupabaseConfigured) await supabase.auth.signOut(); setUser(null); setActiveTab('home'); }}
+              onClick={async () => { localStorage.removeItem('nhia_logged_user'); if (isSupabaseConfigured && navigator.onLine) await supabase.auth.signOut(); setUser(null); setActiveTab('home'); }}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: 12, borderRadius: 12, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
             >
               <LogOut size={16} /> Logout
