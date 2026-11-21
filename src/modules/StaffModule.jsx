@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
-  ChevronLeft, Users, UserCheck, UserPlus, Trash2, Save
+  ChevronLeft, UserCheck, Trash2, Save, BookOpen, Plus
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { clearClassAccessCache } from '../lib/useClassAccess';
 
 export default function StaffModule({ onBack }) {
-  const [tab, setTab] = useState('directory'); // directory | class_teachers | add
+  const [tab, setTab] = useState('directory'); // directory | class_teachers | subjects | add
   const [staffList, setStaffList] = useState([]);
   const [classes, setClasses] = useState([]);
   const [classTeachers, setClassTeachers] = useState([]);
@@ -16,6 +16,15 @@ export default function StaffModule({ onBack }) {
   // Assign Class Teacher State
   const [assignClass, setAssignClass] = useState('');
   const [assignStaffId, setAssignStaffId] = useState('');
+
+  // Subject Mapping State
+  const [subClass, setSubClass] = useState('');
+  const [classSubjects, setClassSubjects] = useState([]);
+  const [newSubName, setNewSubName] = useState('');
+  const [newSubStaffId, setNewSubStaffId] = useState('');
+  const [newW1W4, setNewW1W4] = useState(true);
+  const [newMidterm, setNewMidterm] = useState(true);
+  const [newHifz, setNewHifz] = useState(false);
 
   // Add Staff State
   const [newId, setNewId] = useState('');
@@ -43,7 +52,79 @@ export default function StaffModule({ onBack }) {
     setLoading(false);
   }
 
-  // Assign Class Teacher (Updates all modules instantly)
+  // Load subjects for selected class only (Zero Lag)
+  async function loadClassSubjects(cls) {
+    setSubClass(cls);
+    setMsg('');
+    if (!cls) {
+      setClassSubjects([]);
+      return;
+    }
+    setLoading(true);
+    const { data } = await supabase
+      .from('subject_assignments')
+      .select('*')
+      .eq('class_name', cls)
+      .order('subject_name');
+    setClassSubjects(data || []);
+    setLoading(false);
+  }
+
+  // Add Subject & Assign Teacher
+  async function handleAddSubject(e) {
+    e.preventDefault();
+    if (!subClass || !newSubName.trim()) return alert('Select class and enter subject name.');
+    const staffObj = staffList.find(s => String(s.staff_id) === String(newSubStaffId));
+
+    setLoading(true);
+    setMsg('');
+    const { error } = await supabase.from('subject_assignments').upsert(
+      {
+        class_name: subClass,
+        subject_name: newSubName.trim(),
+        staff_id: staffObj ? String(staffObj.staff_id) : null,
+        staff_name: staffObj ? staffObj.name : null,
+        has_w1_w4: newW1W4,
+        has_midterm: newMidterm,
+        has_hifz: newHifz
+      },
+      { onConflict: 'class_name,subject_name' }
+    );
+
+    setLoading(false);
+    if (error) {
+      setMsg('Error: ' + error.message);
+    } else {
+      setMsg(`${newSubName.trim()} added to ${subClass}.`);
+      setNewSubName('');
+      loadClassSubjects(subClass);
+    }
+  }
+
+  // Optimistic Toggle for W1-W4 / Midterm / Hifz (Instant, Zero Lag)
+  function toggleSubjectFlag(sub, field) {
+    const nextVal = !sub[field];
+    setClassSubjects(prev => prev.map(item => item.id === sub.id ? { ...item, [field]: nextVal } : item));
+    supabase.from('subject_assignments').update({ [field]: nextVal }).eq('id', sub.id).then();
+  }
+
+  // Optimistic Inline Teacher Change (Instant, Zero Lag)
+  function changeSubjectTeacher(sub, staffId) {
+    const staffObj = staffList.find(s => String(s.staff_id) === String(staffId));
+    const sId = staffObj ? String(staffObj.staff_id) : null;
+    const sName = staffObj ? staffObj.name : null;
+
+    setClassSubjects(prev => prev.map(item => item.id === sub.id ? { ...item, staff_id: sId, staff_name: sName } : item));
+    supabase.from('subject_assignments').update({ staff_id: sId, staff_name: sName }).eq('id', sub.id).then();
+  }
+
+  async function deleteSubject(id, name) {
+    if (!window.confirm(`Remove ${name} from ${subClass}?`)) return;
+    setClassSubjects(prev => prev.filter(s => s.id !== id));
+    await supabase.from('subject_assignments').delete().eq('id', id);
+  }
+
+  // Assign Class Teacher
   async function handleAssignClassTeacher(e) {
     e.preventDefault();
     if (!assignClass || !assignStaffId) return alert('Select both class and teacher.');
@@ -52,7 +133,6 @@ export default function StaffModule({ onBack }) {
 
     setLoading(true);
     setMsg('');
-
     const { error } = await supabase.from('class_teachers').upsert(
       {
         class_name: assignClass,
@@ -66,7 +146,7 @@ export default function StaffModule({ onBack }) {
     if (error) {
       setMsg('Error: ' + error.message);
     } else {
-      clearClassAccessCache(); // Refresh cache for Finance, Attendance, etc.
+      clearClassAccessCache();
       setMsg(`${staffObj.name} assigned as Class Teacher for ${assignClass}.`);
       setAssignClass('');
       setAssignStaffId('');
@@ -82,7 +162,7 @@ export default function StaffModule({ onBack }) {
     loadAll();
   }
 
-  // Add / Update Staff
+  // Add Staff
   async function handleAddStaff(e) {
     e.preventDefault();
     if (!newId.trim() || !newName.trim()) return alert('Enter Staff ID and Name.');
@@ -100,9 +180,8 @@ export default function StaffModule({ onBack }) {
     );
 
     setLoading(false);
-    if (error) {
-      setMsg('Error: ' + error.message);
-    } else {
+    if (error) setMsg('Error: ' + error.message);
+    else {
       setMsg(`Staff ${newName.trim()} saved.`);
       setNewId('');
       setNewName('');
@@ -124,21 +203,22 @@ export default function StaffModule({ onBack }) {
         <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
           <ChevronLeft size={20} />
         </button>
-        <h2 style={{ fontSize: 20, fontWeight: 800 }}>Staff & Class Teachers</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 800 }}>Staff & Assignments</h2>
       </div>
 
-      {/* TABS */}
-      <div style={{ display: 'flex', background: '#e2e8f0', padding: 4, borderRadius: 14, marginBottom: 14, gap: 4 }}>
+      {/* 4 TABS */}
+      <div style={{ display: 'flex', background: '#e2e8f0', padding: 4, borderRadius: 14, marginBottom: 14, gap: 3 }}>
         {[
-          { id: 'directory', label: 'Staff List' },
-          { id: 'class_teachers', label: 'Class Teachers' },
+          { id: 'directory', label: 'Staff' },
+          { id: 'class_teachers', label: 'Class Tr' },
+          { id: 'subjects', label: 'Subjects' },
           { id: 'add', label: 'Add Staff' }
         ].map(t => (
           <button
             key={t.id}
             onClick={() => { setTab(t.id); setMsg(''); }}
             style={{
-              flex: 1, padding: '10px 4px', borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 11, cursor: 'pointer',
+              flex: 1, padding: '9px 3px', borderRadius: 10, border: 'none', fontWeight: 700, fontSize: 11, cursor: 'pointer',
               background: tab === t.id ? '#fff' : 'transparent',
               color: tab === t.id ? '#2e44d2' : '#475569'
             }}
@@ -184,12 +264,12 @@ export default function StaffModule({ onBack }) {
         </div>
       )}
 
-      {/* TAB 2: CENTRALIZED CLASS TEACHER ASSIGNMENT */}
+      {/* TAB 2: CLASS TEACHERS */}
       {tab === 'class_teachers' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <form onSubmit={handleAssignClassTeacher} style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #c7d2fe', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: '#2e44d2', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <UserCheck size={16} /> Assign Class Teacher (Applies to All Modules)
+              <UserCheck size={16} /> Assign Class Teacher
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.6fr', gap: 8 }}>
               <select value={assignClass} onChange={e => setAssignClass(e.target.value)} style={{ padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff', fontWeight: 600 }}>
@@ -204,7 +284,7 @@ export default function StaffModule({ onBack }) {
               </select>
             </div>
             <button type="submit" disabled={loading} style={{ padding: 11, borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-              {loading ? 'Saving...' : 'Assign Class Teacher'}
+              Assign
             </button>
           </form>
 
@@ -231,7 +311,130 @@ export default function StaffModule({ onBack }) {
         </div>
       )}
 
-      {/* TAB 3: ADD STAFF */}
+      {/* TAB 3: CLASS-WISE SUBJECTS, TEACHERS & EXAM CONFIG (W1-W4 / MIDTERM) */}
+      {tab === 'subjects' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <select
+            value={subClass}
+            onChange={e => loadClassSubjects(e.target.value)}
+            style={{ width: '100%', padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, fontSize: 13 }}
+          >
+            <option value="">Select Class to Manage Subjects</option>
+            {classes.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+
+          {subClass && (
+            <>
+              {/* ADD NEW SUBJECT FORM */}
+              <form onSubmit={handleAddSubject} style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #c7d2fe', display: 'flex', flexDirection: 'column', gap: 9 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#2e44d2', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <BookOpen size={15} /> Add Subject to {subClass}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  <input
+                    required
+                    value={newSubName}
+                    onChange={e => setNewSubName(e.target.value)}
+                    placeholder="Subject Name (e.g. Fiqh, Arabic)"
+                    style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }}
+                  />
+                  <select
+                    value={newSubStaffId}
+                    onChange={e => setNewSubStaffId(e.target.value)}
+                    style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}
+                  >
+                    <option value="">Assign Teacher</option>
+                    {staffList.map(s => <option key={s.staff_id} value={s.staff_id}>{s.name}</option>)}
+                  </select>
+                </div>
+
+                {/* EXAM TYPE TOGGLES */}
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[
+                    { label: 'W1–W4', val: newW1W4, set: setNewW1W4 },
+                    { label: 'Midterm', val: newMidterm, set: setNewMidterm },
+                    { label: 'Hifz / Viva', val: newHifz, set: setNewHifz }
+                  ].map(b => (
+                    <button
+                      key={b.label}
+                      type="button"
+                      onClick={() => b.set(!b.val)}
+                      style={{
+                        flex: 1, padding: '7px 4px', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+                        border: b.val ? '1px solid #16a34a' : '1px solid #cbd5e1',
+                        background: b.val ? '#dcfce7' : '#f8fafc',
+                        color: b.val ? '#15803d' : '#64748b'
+                      }}
+                    >
+                      {b.label}: {b.val ? 'ON' : 'OFF'}
+                    </button>
+                  ))}
+                </div>
+
+                <button type="submit" disabled={loading} style={{ padding: 10, borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                  <Plus size={14} /> Add Subject
+                </button>
+              </form>
+
+              {/* ASSIGNED SUBJECTS LIST */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {classSubjects.length === 0 ? (
+                  <div style={{ background: '#fff', padding: 18, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center', fontSize: 12, color: '#64748b' }}>
+                    No subjects configured for {subClass} yet.
+                  </div>
+                ) : (
+                  classSubjects.map(sub => (
+                    <div key={sub.id} style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{sub.subject_name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <select
+                            value={sub.staff_id || ''}
+                            onChange={e => changeSubjectTeacher(sub, e.target.value)}
+                            style={{ padding: '5px 8px', borderRadius: 7, border: '1px solid #cbd5e1', fontSize: 11, fontWeight: 600, background: '#f8fafc', maxWidth: 160 }}
+                          >
+                            <option value="">Unassigned</option>
+                            {staffList.map(s => <option key={s.staff_id} value={s.staff_id}>{s.name}</option>)}
+                          </select>
+                          <Trash2 size={14} color="#dc2626" style={{ cursor: 'pointer' }} onClick={() => deleteSubject(sub.id, sub.subject_name)} />
+                        </div>
+                      </div>
+
+                      {/* INSTANT EXAM CONFIG CHIPS */}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {[
+                          { key: 'has_w1_w4', label: 'W1–W4' },
+                          { key: 'has_midterm', label: 'Midterm' },
+                          { key: 'has_hifz', label: 'Hifz / Viva' }
+                        ].map(f => {
+                          const on = !!sub[f.key];
+                          return (
+                            <button
+                              key={f.key}
+                              type="button"
+                              onClick={() => toggleSubjectFlag(sub, f.key)}
+                              style={{
+                                flex: 1, padding: '5px 4px', borderRadius: 7, fontSize: 10, fontWeight: 700, cursor: 'pointer',
+                                border: on ? '1px solid #16a34a' : '1px solid #e2e8f0',
+                                background: on ? '#16a34a' : '#f1f5f9',
+                                color: on ? '#fff' : '#64748b'
+                              }}
+                            >
+                              {f.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* TAB 4: ADD STAFF */}
       {tab === 'add' && (
         <form onSubmit={handleAddStaff} style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
           <input required value={newId} onChange={e => setNewId(e.target.value)} placeholder="Staff ID (e.g. 105)" style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1' }} />
