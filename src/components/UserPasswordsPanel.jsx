@@ -45,7 +45,15 @@ export default function UserPasswordsPanel() {
   }, [rows, search]);
 
   function getRowKey(r) {
-    return r.id ?? r.adm_no ?? r.email;
+    return r.id ?? r.staff_id ?? r.adm_no ?? r.email ?? r.name;
+  }
+
+  function getIdColumn(r) {
+    if ('id' in r) return 'id';
+    if ('staff_id' in r) return 'staff_id';
+    if ('adm_no' in r) return 'adm_no';
+    if ('email' in r) return 'email';
+    return 'name';
   }
 
   function getPassColumn(r) {
@@ -63,7 +71,7 @@ export default function UserPasswordsPanel() {
 
     const table = tab === 'staff' ? 'staff' : 'students';
     const passCol = getPassColumn(row);
-    const idCol = 'id' in row ? 'id' : (tab === 'students' ? 'adm_no' : 'email');
+    const idCol = getIdColumn(row);
     const idVal = row[idCol];
 
     const { error } = await supabase
