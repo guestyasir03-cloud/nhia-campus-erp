@@ -1,14 +1,19 @@
 import html2pdf from 'html2pdf.js';
 
-function buildPrintClone(el, forceLandscape = null) {
+function buildPrintClone(el, mode = 'pdf', forceLandscape = null) {
   const firstTable = el.querySelector('table');
-  const colCount = firstTable
-    ? firstTable.querySelectorAll('thead th, tr:first-child th, tr:first-child td').length
-    : 0;
-  const isLandscape = forceLandscape !== null ? forceLandscape : colCount >= 7;
-  const targetWidth = isLandscape ? 1120 : 794;
+  // Correctly count columns from the first row only
+  const firstRow = firstTable ? firstTable.querySelector('tr') : null;
+  const colCount = firstRow ? firstRow.children.length : 0;
 
-  // Hidden host container (keeps element at real size without scrolling or blank canvas)
+  const isLandscape = forceLandscape !== null ? forceLandscape : colCount >= 8;
+
+  // JPEG uses compact mobile-friendly portrait width (540px) so it fills phone screens cleanly
+  // PDF uses standard A4 width (794px portrait / 1120px landscape)
+  const targetWidth = isLandscape
+    ? (mode === 'jpeg' ? 1000 : 1120)
+    : (mode === 'jpeg' ? 540 : 794);
+
   const host = document.createElement('div');
   host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;overflow:hidden;pointer-events:none;z-index:-1;';
 
@@ -16,7 +21,7 @@ function buildPrintClone(el, forceLandscape = null) {
   wrapper.style.cssText = `
     width: ${targetWidth}px;
     background: #ffffff;
-    padding: 22px 24px;
+    padding: ${mode === 'jpeg' && !isLandscape ? '16px 14px' : '22px 24px'};
     box-sizing: border-box;
     font-family: system-ui, -apple-system, sans-serif;
     color: #0f172a;
@@ -29,8 +34,8 @@ function buildPrintClone(el, forceLandscape = null) {
     thead { display: table-header-group !important; }
     tr { page-break-inside: avoid !important; break-inside: avoid !important; }
     th, td {
-      padding: ${isLandscape ? '6px 5px' : '8px 7px'} !important;
-      font-size: ${isLandscape ? '11px' : '12.5px'} !important;
+      padding: ${isLandscape ? '6px 5px' : '8px 6px'} !important;
+      font-size: ${isLandscape ? '11px' : (mode === 'jpeg' ? '13px' : '12.5px')} !important;
       line-height: 1.35 !important;
       white-space: ${colCount > 12 ? 'nowrap' : 'normal'} !important;
       word-break: break-word;
@@ -67,7 +72,7 @@ export async function exportReportPDF(elId, filename, forceLandscape = null) {
 
   await new Promise(r => requestAnimationFrame(r));
 
-  const { host, wrapper, targetWidth, isLandscape } = buildPrintClone(el, forceLandscape);
+  const { host, wrapper, targetWidth, isLandscape } = buildPrintClone(el, 'pdf', forceLandscape);
   try {
     await html2pdf()
       .set({
@@ -106,7 +111,7 @@ export async function exportReportJPEG(elId, filename, forceLandscape = null) {
 
   await new Promise(r => requestAnimationFrame(r));
 
-  const { host, wrapper, targetWidth } = buildPrintClone(el, forceLandscape);
+  const { host, wrapper, targetWidth } = buildPrintClone(el, 'jpeg', forceLandscape);
   try {
     const worker = html2pdf()
       .set({
