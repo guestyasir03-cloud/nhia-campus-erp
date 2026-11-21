@@ -93,6 +93,8 @@ export default function LeaveModule({ user, onBack }) {
   const [filterTo, setFilterTo] = useState('');
   const [filterClass, setFilterClass] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
+  const [reportSearch, setReportSearch] = useState('');
+  const [reportSort, setReportSort] = useState('date_desc'); // 'date_desc' | 'class_asc' | 'name_asc' | 'duration_desc'
   const [insightSearch, setInsightSearch] = useState('');
   const [selectedStudentReport, setSelectedStudentReport] = useState(null);
 
@@ -203,14 +205,32 @@ export default function LeaveModule({ user, onBack }) {
 
   // Filtered report rows
   const filteredReports = useMemo(() => {
-    return leaves.filter(l => {
+    const q = reportSearch.trim().toLowerCase();
+    const list = leaves.filter(l => {
       if (filterClass !== 'All' && l.class_name !== filterClass) return false;
       if (filterStatus !== 'All' && l.status !== filterStatus) return false;
       if (filterFrom && l.start_date < filterFrom) return false;
       if (filterTo && l.start_date > filterTo) return false;
+      if (q) {
+        const hit =
+          (l.student_name || '').toLowerCase().includes(q) ||
+          String(l.adm_no || '').toLowerCase().includes(q) ||
+          (l.class_name || '').toLowerCase().includes(q);
+        if (!hit) return false;
+      }
       return true;
     });
-  }, [leaves, filterClass, filterStatus, filterFrom, filterTo]);
+
+    return [...list].sort((a, b) => {
+      if (reportSort === 'name_asc') return (a.student_name || '').localeCompare(b.student_name || '');
+      if (reportSort === 'class_asc') {
+        const c = (a.class_name || '').localeCompare(b.class_name || '');
+        return c !== 0 ? c : (a.student_name || '').localeCompare(b.student_name || '');
+      }
+      if (reportSort === 'duration_desc') return calculateLeaveHours(b) - calculateLeaveHours(a);
+      return (b.start_date || '').localeCompare(a.start_date || '') || (b.id - a.id);
+    });
+  }, [leaves, filterClass, filterStatus, filterFrom, filterTo, reportSearch, reportSort]);
 
   // Insights calculations
   const insights = useMemo(() => {
@@ -746,6 +766,23 @@ export default function LeaveModule({ user, onBack }) {
               <option value="Active">Active</option>
               <option value="Returned">Returned</option>
               <option value="Upcoming">Upcoming</option>
+            </select>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 8, marginBottom: 10 }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 9, top: 10 }} />
+              <input
+                value={reportSearch}
+                onChange={e => setReportSearch(e.target.value)}
+                placeholder="Search name / Adm No..."
+                style={{ width: '100%', padding: '8px 8px 8px 28px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, boxSizing: 'border-box' }}
+              />
+            </div>
+            <select value={reportSort} onChange={e => setReportSort(e.target.value)} style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }}>
+              <option value="date_desc">Sort: Newest</option>
+              <option value="class_asc">Sort: Class-wise</option>
+              <option value="name_asc">Sort: Name (A-Z)</option>
+              <option value="duration_desc">Sort: Highest Time</option>
             </select>
           </div>
 
