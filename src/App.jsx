@@ -16,6 +16,7 @@ import AnnouncementsModule from './modules/AnnouncementsModule';
 import StaffModule from './modules/StaffModule';
 import UserPasswordsPanel from './components/UserPasswordsPanel';
 import ReportsModule from './modules/ReportsModule';
+import LeaveModule from './modules/LeaveModule';
 import YearResetPanel from './components/YearResetPanel';
 const ICON_MAP = {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
@@ -27,6 +28,7 @@ const DEFAULT_ROLES = ['admin', 'coordinator', 'teacher', 'student'];
 const DEFAULT_MODULES = [
   { id: 'examinations', name: 'Examinations', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'attendance', name: 'Attendance', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'leave', name: 'Leave Portal', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'students', name: 'Students', icon: 'Users', visible_roles: ['admin', 'coordinator', 'teacher'], is_active: true },
   { id: 'finance', name: 'Finance', icon: 'Wallet', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'activity', name: 'Activity Points', icon: 'Star', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
@@ -390,6 +392,8 @@ export default function App() {
           <ExamsModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'attendance' ? (
           <AttendanceModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'leave' ? (
+          <LeaveModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'finance' ? (
           <FinanceModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'activity' ? (
