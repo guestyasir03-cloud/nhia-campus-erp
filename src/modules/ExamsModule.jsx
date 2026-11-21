@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FileText, Award, Download, ChevronLeft, Save, Search } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
+import { exportReportPDF, exportReportJPEG } from '../lib/exportReport';
 
 export default function ExamsModule({ onBack, user }) {
   const isAdmin = ['admin', 'coordinator'].includes(user?.role);
@@ -303,15 +304,7 @@ export default function ExamsModule({ onBack, user }) {
   }
 
   function downloadPDF() {
-    const el = document.getElementById('nhia-grade-card');
-    if (!el) return;
-    html2pdf().set({
-      margin: 10,
-      filename: `${gradeCard.student.name}_GradeCard.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    }).from(el).save();
+    exportReportPDF('nhia-grade-card', `${gradeCard.student.name}_GradeCard.pdf`, false);
   }
 
   const Header = ({ title, backAction }) => (

@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
+import { exportReportPDF, exportReportJPEG } from '../lib/exportReport';
 
 const DEFAULT_SESSIONS = [
   'Friday Register',
@@ -327,15 +328,8 @@ export default function AttendanceModule({ onBack, user }) {
     URL.revokeObjectURL(url);
   }
 
-  function downloadPDF(elId, filename) {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    html2pdf().set({
-      margin: 8, filename,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    }).from(el).save();
+  function downloadPDF(elId, filename, landscape = null) {
+    exportReportPDF(elId, filename, landscape);
   }
 
   const pCount = spotStudents.filter(s => spotMap[s.adm_no] === 'P').length;

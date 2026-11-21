@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronLeft, Trophy, FileSpreadsheet, Download, Image as ImageIcon } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
+import { exportReportPDF, exportReportJPEG } from '../lib/exportReport';
 
 export default function ReportsModule({ onBack }) {
   const [tab, setTab] = useState('class'); // performance | class | pending
@@ -54,34 +55,12 @@ export default function ReportsModule({ onBack }) {
     URL.revokeObjectURL(url);
   }
 
-  function downloadPDF(elementId, filename, landscape = false) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    html2pdf().set({
-      margin: 8,
-      filename,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: landscape ? 'landscape' : 'portrait' }
-    }).from(el).save();
+  function downloadPDF(elId, filename, landscape = null) {
+    exportReportPDF(elId, filename, landscape);
   }
 
-  async function downloadJPEG(elementId, filename) {
-    const el = document.getElementById(elementId);
-    if (!el) return;
-    try {
-      const worker = html2pdf().set({
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' }
-      }).from(el);
-      const canvas = await worker.toCanvas().get('canvas');
-      const link = document.createElement('a');
-      link.download = filename;
-      link.href = canvas.toDataURL('image/jpeg', 0.95);
-      link.click();
-    } catch (err) {
-      alert('JPEG download error: ' + err.message);
-    }
+  function downloadJPEG(elId, filename, landscape = null) {
+    exportReportJPEG(elId, filename, landscape);
   }
 
   // ==========================================

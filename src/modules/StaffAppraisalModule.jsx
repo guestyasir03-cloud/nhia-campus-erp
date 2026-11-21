@@ -3,8 +3,8 @@ import {
   ChevronLeft, Save, Download, FileSpreadsheet, Plus,
   ShieldAlert, CheckCircle2, FileText, ClipboardList, BarChart3
 } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
+import { exportReportPDF, exportReportJPEG } from '../lib/exportReport';
 
 const ACADEMIC_YEAR = '2026-27';
 
@@ -396,15 +396,8 @@ const [monFilter, setMonFilter] = useState('ALL');
     setLoading(false);
   }
 
-  function downloadPDF(elId, filename) {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    html2pdf().set({
-      margin: 8, filename,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    }).from(el).save();
+  function downloadJPEG(elId, filename, landscape = null) {
+    exportReportJPEG(elId, filename, landscape);
   }
 
   function downloadCSV(filename, headers, rows) {
