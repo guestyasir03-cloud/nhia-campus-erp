@@ -134,17 +134,62 @@ function buildPrintClone(el, mode = 'pdf', forceLandscape = null, rowSlice = nul
   return { host, wrapper, targetWidth, isLandscape };
 }
 
+function splitWideTableForPDF(wrapper, colCount) {
+  const table = wrapper.querySelector('table');
+  if (!table || colCount <= 12) return;
+
+  const fixedCols = 3; // Roll, Adm No, Student Name
+  const extraCols = colCount - fixedCols;
+  const numParts = Math.ceil(extraCols / 9);
+  const chunkSize = Math.ceil(extraCols / numParts);
+
+  const originalHTML = wrapper.innerHTML;
+  wrapper.innerHTML = '';
+
+  for (let p = 0; p < numParts; p++) {
+    const startCol = fixedCols + p * chunkSize;
+    const endCol = Math.min(colCount, startCol + chunkSize);
+
+    const section = document.createElement('div');
+    if (p > 0) section.style.pageBreakBefore = 'always';
+    section.innerHTML = originalHTML;
+
+    section.querySelectorAll('table tr').forEach(tr => {
+      const cells = Array.from(tr.children);
+      cells.forEach((cell, idx) => {
+        const keep = idx < fixedCols || (idx >= startCol && idx < endCol);
+        if (!keep) cell.remove();
+      });
+    });
+
+    const footer = document.createElement('div');
+    footer.style.cssText = 'text-align:right;font-size:11px;font-weight:700;color:#475569;margin-top:8px;';
+    footer.textContent = `Part ${p + 1} of ${numParts}`;
+    section.appendChild(footer);
+
+    wrapper.appendChild(section);
+  }
+}
+
 export async function exportReportPDF(elId, filename, forceLandscape = null) {
   const el = document.getElementById(elId);
   if (!el) return alert('Report content not found.');
 
   await new Promise(r => requestAnimationFrame(r));
 
-  const { host, wrapper, targetWidth, isLandscape } = buildPrintClone(el, 'pdf', forceLandscape, null, null, filename);
+  const { colCount, isLandscape } = getTableInfo(el, forceLandscape);
+  const { host, wrapper } = buildPrintClone(el, 'pdf', forceLandscape, null, null, filename);
+
+  const finalWidth = isLandscape ? 1120 : 794;
+  if (colCount > 12) {
+    wrapper.style.width = `${finalWidth}px`;
+    splitWideTableForPDF(wrapper, colCount);
+  }
+
   try {
     await html2pdf()
       .set({
-        margin: isLandscape ? [4, 4, 4, 4] : [8, 8, 8, 8],
+        margin: isLandscape ? [6, 6, 6, 6] : [8, 8, 8, 8],
         filename: filename.endsWith('.pdf') ? filename : `${filename}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: {
@@ -152,8 +197,8 @@ export async function exportReportPDF(elId, filename, forceLandscape = null) {
           useCORS: true,
           logging: false,
           backgroundColor: '#ffffff',
-          width: targetWidth,
-          windowWidth: targetWidth,
+          width: finalWidth,
+          windowWidth: finalWidth,
           scrollX: 0,
           scrollY: 0
         },
