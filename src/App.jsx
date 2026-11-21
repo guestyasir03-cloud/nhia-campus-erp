@@ -55,6 +55,31 @@ export default function App() {
   const [rolePreview, setRolePreview] = useState('admin');
   const [activeTab, setActiveTab] = useState('home');
   const [activeModule, setActiveModule] = useState(null);
+  // Mobile & Computer Back button support (Zero-Lag)
+  const isPoppingRef = useRef(false);
+
+  useEffect(() => {
+    const handlePopState = (event) => {
+      isPoppingRef.current = true;
+      setActiveModule(event.state?.module || null);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    if (isPoppingRef.current) {
+      isPoppingRef.current = false;
+      return;
+    }
+    if (activeModule) {
+      if (window.history.state?.module !== activeModule) {
+        window.history.pushState({ module: activeModule }, '', `#${activeModule}`);
+      }
+    } else if (window.history.state?.module) {
+      window.history.back();
+    }
+  }, [activeModule]);
   const [modules, setModules] = useState(DEFAULT_MODULES);
   const [roles, setRoles] = useState(DEFAULT_ROLES);
   const [newRoleName, setNewRoleName] = useState('');
