@@ -162,7 +162,7 @@ export async function exportReportPDF(elId, filename, forceLandscape = null) {
           format: 'a4',
           orientation: isLandscape ? 'landscape' : 'portrait'
         },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+        pagebreak: { mode: ['css', 'legacy'] }
       })
       .from(wrapper)
       .save();
@@ -217,48 +217,75 @@ export async function exportReportJPEG(elId, filename, forceLandscape = null) {
 
   await new Promise(r => requestAnimationFrame(r));
 
-  const { isLandscape } = getTableInfo(el, forceLandscape);
+  const { colCount, isLandscape } = getTableInfo(el, forceLandscape);
   const rowsPerPage = isLandscape ? 16 : 22;
   const tbody = el.querySelector('tbody');
   const totalRows = tbody ? tbody.querySelectorAll('tr').length : 0;
 
   const baseName = filename.replace(/\.(jpe?g)$/i, '');
+  const totalPages = Math.max(1, Math.ceil(totalRows / rowsPerPage));
 
-  if (totalRows <= rowsPerPage) {
-    const { host, wrapper, targetWidth } = buildPrintClone(el, 'jpeg', forceLandscape, null, null, filename);
-    try {
-      await renderWrapperToJPEG(wrapper, targetWidth, `${baseName}.jpg`);
-    } catch (err) {
-      alert('JPEG export failed: ' + err.message);
-    } finally {
-      document.body.removeChild(host);
-    }
-    return;
-  }
+  // Wide tables (13+ cols) split neatly into readable JPEG parts
+  const isWide = colCount > 12;
+  const fixedCols = 3;
+  const extraCols = isWide ? colCount - fixedCols : 0;
+  const numParts = isWide ? Math.ceil(extraCols / 9) : 1;
+  const chunkSize = isWide ? Math.ceil(extraCols / numParts) : 0;
 
-  const totalPages = Math.ceil(totalRows / rowsPerPage);
   for (let p = 0; p < totalPages; p++) {
-    const start = p * rowsPerPage;
-    const end = start + rowsPerPage;
-    const { host, wrapper, targetWidth } = buildPrintClone(
-      el,
-      'jpeg',
-      forceLandscape,
-      { start, end },
-      { current: p + 1, total: totalPages },
-      filename
-    );
+    const rowSlice = totalPages > 1 ? { start: p * rowsPerPage, end: (p + 1) * rowsPerPage } : null;
+    const pageInfo = totalPages > 1 ? { current: p + 1, total: totalPages } : null;
 
-    try {
-      await renderWrapperToJPEG(wrapper, targetWidth, `${baseName}_Page${p + 1}.jpg`);
-      if (p < totalPages - 1) {
-        await new Promise(r => setTimeout(r, 450));
+    for (let part = 0; part < numParts; part++) {
+      const { host, wrapper, targetWidth } = buildPrintClone(
+        el,
+        'jpeg',
+        forceLandscape,
+        rowSlice,
+        pageInfo,
+        filename
+      );
+
+      let renderWidth = targetWidth;
+      if (isWide) {
+        renderWidth = 1050;
+        wrapper.style.width = `${renderWidth}px`;
+        const startCol = fixedCols + part * chunkSize;
+        const endCol = Math.min(colCount, startCol + chunkSize);
+
+        wrapper.querySelectorAll('table tr').forEach(tr => {
+          Array.from(tr.children).forEach((cell, idx) => {
+            const keep = idx < fixedCols || (idx >= startCol && idx < endCol);
+            if (!keep) cell.remove();
+          });
+        });
+
+        const partFooter = document.createElement('div');
+        partFooter.style.cssText = 'text-align:right;font-size:11px;font-weight:700;color:#475569;margin-top:6px;';
+        partFooter.textContent = `Part ${part + 1} of ${numParts}`;
+        wrapper.appendChild(partFooter);
       }
-    } catch (err) {
-      alert(`JPEG Page ${p + 1} failed: ` + err.message);
-      break;
-    } finally {
-      document.body.removeChild(host);
+
+      const suffix =
+        totalPages > 1 && numParts > 1
+          ? `_Page${p + 1}_Part${part + 1}.jpg`
+          : totalPages > 1
+            ? `_Page${p + 1}.jpg`
+            : numParts > 1
+              ? `_Part${part + 1}.jpg`
+              : '.jpg';
+
+      try {
+        await renderWrapperToJPEG(wrapper, renderWidth, `${baseName}${suffix}`);
+        if (p < totalPages - 1 || part < numParts - 1) {
+          await new Promise(r => setTimeout(r, 450));
+        }
+      } catch (err) {
+        alert(`JPEG export failed: ${err.message}`);
+        return;
+      } finally {
+        document.body.removeChild(host);
+      }
     }
   }
 }
