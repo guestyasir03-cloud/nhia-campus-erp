@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { KeyRound, Search, Eye, EyeOff, Check, X, Edit2 } from 'lucide-react';
 
-export default function UserPasswordsPanel({ user }) {
-  const [tab, setTab] = useState('staff'); // 'staff' | 'students'
+export default function UserPasswordsPanel() {
+  const [tab, setTab] = useState('staff');
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -14,13 +14,9 @@ export default function UserPasswordsPanel({ user }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
 
-  // Only Admin can view this panel
-  const role = (user?.role || '').toLowerCase();
-const isAdmin = role.includes('admin') || role.includes('principal') || role.includes('director') || user?.isAdmin === true;
-
   useEffect(() => {
-    if (isAdmin) loadUsers(tab);
-  }, [tab, isAdmin]);
+    loadUsers(tab);
+  }, [tab]);
 
   async function loadUsers(activeTab) {
     setLoading(true);
@@ -28,9 +24,7 @@ const isAdmin = role.includes('admin') || role.includes('principal') || role.inc
     setEditingId(null);
 
     const table = activeTab === 'staff' ? 'staff' : 'students';
-    const orderCol = activeTab === 'staff' ? 'name' : 'name';
-
-    const { data, error } = await supabase.from(table).select('*').order(orderCol);
+    const { data, error } = await supabase.from(table).select('*').order('name');
     if (error) {
       setMsg('❌ Error loading users: ' + error.message);
       setRows([]);
@@ -90,8 +84,6 @@ const isAdmin = role.includes('admin') || role.includes('principal') || role.inc
       setMsg(`✅ ${row.name}-inte password maatti!`);
     }
   }
-
-  if (!isAdmin) return null;
 
   return (
     <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
