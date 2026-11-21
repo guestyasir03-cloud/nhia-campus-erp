@@ -20,7 +20,7 @@ function buildPrintClone(el, mode = 'pdf', forceLandscape = null, rowSlice = nul
 
  const targetWidth = isLandscape
     ? (colCount >= 11
-        ? Math.max(mode === 'jpeg' ? 1000 : 1120, colCount * 96)
+        ? Math.max(mode === 'jpeg' ? 1000 : 1120, colCount * 72)
         : (mode === 'jpeg' ? 1000 : 1120))
     : (mode === 'jpeg' ? 540 : 794);
 
@@ -62,9 +62,9 @@ function buildPrintClone(el, mode = 'pdf', forceLandscape = null, rowSlice = nul
     tbody tr:nth-child(even) {
       background: #f8fafc !important;
     }
-   th, td {
-      padding: ${isLandscape ? (colCount >= 11 ? '5px 4px' : '6px 5px') : '8px 7px'} !important;
-      font-size: ${isLandscape ? (colCount >= 11 ? '10px' : '11px') : '12.5px'} !important;
+  th, td {
+      padding: ${isLandscape ? (colCount >= 11 ? '5px 3px' : '6px 5px') : '8px 7px'} !important;
+      font-size: ${isLandscape ? (colCount >= 11 ? '11px' : '11.5px') : '12.5px'} !important;
       line-height: 1.35 !important;
       border: 1px solid #e2e8f0 !important;
       white-space: normal !important;
@@ -138,7 +138,7 @@ export async function exportReportPDF(elId, filename, forceLandscape = null) {
   try {
     await html2pdf()
       .set({
-        margin: [8, 8, 8, 8],
+        margin: isLandscape ? [4, 4, 4, 4] : [8, 8, 8, 8],
         filename: filename.endsWith('.pdf') ? filename : `${filename}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: {
