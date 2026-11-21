@@ -39,21 +39,17 @@ function getPendingMonths(lastPaidYM, refYM = getCurrentYM()) {
 
 export default function FinanceModule({ onBack, user }) {
   const isStudent = user?.role === 'student';
-  const [tab, setTab] = useState('ledger'); // ledger | parent_report | admin_report
   const { isAdmin, allowedClasses: classes, isClassTeacher, loading: accessLoading } = useClassAccess(user);
+
+  const [tab, setTab] = useState('ledger');
   const [selectedClass, setSelectedClass] = useState('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
-  // Class Ledger State
   const [students, setStudents] = useState([]);
   const [amountMap, setAmountMap] = useState({});
   const [lastPaidMap, setLastPaidMap] = useState({});
-
-  // Admin Campus Summary State
   const [campusReport, setCampusReport] = useState(null);
-
-  // Student Self-View State
   const [myData, setMyData] = useState(null);
 
   const currentYM = getCurrentYM();
@@ -61,17 +57,8 @@ export default function FinanceModule({ onBack, user }) {
   useEffect(() => {
     if (isStudent && user?.id) {
       loadStudentSelfView(user.id);
-    } else {
-      loadClasses();
     }
   }, []);
-
-  async function loadClasses() {
-    const { data } = await supabase.from('students').select('class_name');
-    if (data) {
-      setClasses([...new Set(data.map(d => d.class_name).filter(Boolean))].filter(c => c !== 'ALUMNI').sort());
-    }
-  }
 
   async function loadStudentSelfView(admNo) {
     setLoading(true);
@@ -119,7 +106,6 @@ export default function FinanceModule({ onBack, user }) {
     setLoading(false);
   }
 
-  // Quick "+1 Month" Payment (Optimistic UI - Zero Lag)
   async function handleQuickPayOneMonth(s) {
     const amt = Number(amountMap[s.adm_no]) || 0;
     const currentLP = lastPaidMap[s.adm_no];
@@ -128,11 +114,9 @@ export default function FinanceModule({ onBack, user }) {
     }
     const nextYM = addOneMonth(currentLP);
 
-    // Instant UI update
     setLastPaidMap(prev => ({ ...prev, [s.adm_no]: nextYM }));
     setMsg(`Recorded ${formatYM(nextYM)} (₹${amt}) for ${s.name}.`);
 
-    // Background DB sync
     await Promise.all([
       supabase.from('students').update({ last_paid_month: nextYM, monthly_donation: amt }).eq('adm_no', s.adm_no),
       supabase.from('donation_receipts').insert({
@@ -145,7 +129,6 @@ export default function FinanceModule({ onBack, user }) {
     ]);
   }
 
-  // Bulk Save Amounts & Last Paid Months
   async function saveClassSetup() {
     if (students.length === 0) return;
     setLoading(true);
@@ -165,7 +148,6 @@ export default function FinanceModule({ onBack, user }) {
     else setMsg(`Saved monthly amounts & last paid status for ${selectedClass}.`);
   }
 
-  // Generate Campus-Wide Financial & Arrears Summary
   async function generateCampusSummary() {
     setLoading(true);
     const [{ data: stData }, { data: recData }] = await Promise.all([
@@ -202,7 +184,6 @@ export default function FinanceModule({ onBack, user }) {
     setLoading(false);
   }
 
-  // Export Helpers
   function downloadCSV(filename, headers, rows) {
     const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -271,9 +252,7 @@ export default function FinanceModule({ onBack, user }) {
     </div>
   );
 
-  // ==========================================
-  // STUDENT / PARENT SELF-VIEW
-  // ==========================================
+  // STUDENT SELF-VIEW
   if (isStudent) {
     return (
       <div>
@@ -335,8 +314,9 @@ export default function FinanceModule({ onBack, user }) {
       </div>
     );
   }
-  // Lock for non-class teachers
-  if (!isStudent && !accessLoading && !isClassTeacher) {
+
+  // LOCK FOR NON-CLASS TEACHERS
+  if (!accessLoading && !isClassTeacher) {
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
@@ -352,12 +332,9 @@ export default function FinanceModule({ onBack, user }) {
     );
   }
 
-  // ==========================================
-  // ADMIN / STAFF VIEW
-  // ==========================================
+  // ADMIN / CLASS TEACHER VIEW
   return (
     <div>
-      {/* HEADER */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
         <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
           <ChevronLeft size={20} />
@@ -365,12 +342,12 @@ export default function FinanceModule({ onBack, user }) {
         <h2 style={{ fontSize: 20, fontWeight: 800 }}>Finance & Donations</h2>
       </div>
 
-      {/* TOP TABS */}
+      {/* TOP TABS (Financial Report only for Admin) */}
       <div style={{ display: 'flex', background: '#e2e8f0', padding: 4, borderRadius: 14, marginBottom: 14, gap: 4 }}>
         {[
           { id: 'ledger', label: 'Donation Ledger' },
           { id: 'parent_report', label: 'Parent Report' },
-          (isAdmin ? [{ id: 'admin_report', label: 'Financial Report' }] : [])
+          ...(isAdmin ? [{ id: 'admin_report', label: 'Financial Report' }] : [])
         ].map(t => (
           <button
             key={t.id}
@@ -392,7 +369,6 @@ export default function FinanceModule({ onBack, user }) {
         </div>
       )}
 
-      {/* CLASS SELECTOR */}
       {(tab === 'ledger' || tab === 'parent_report') && (
         <div style={{ marginBottom: 12 }}>
           <select
@@ -406,9 +382,7 @@ export default function FinanceModule({ onBack, user }) {
         </div>
       )}
 
-      {/* ================================================= */}
-      {/* TAB 1: MULTI-YEAR CONTINUOUS DONATION LEDGER      */}
-      {/* ================================================= */}
+      {/* TAB 1: DONATION LEDGER */}
       {tab === 'ledger' && students.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {students.map((s, idx) => {
@@ -475,9 +449,7 @@ export default function FinanceModule({ onBack, user }) {
         </div>
       )}
 
-      {/* ================================================= */}
-      {/* TAB 2: PARENT REPORT (PRIVACY-SAFE: NO AMOUNTS)   */}
-      {/* ================================================= */}
+      {/* TAB 2: PARENT REPORT */}
       {tab === 'parent_report' && students.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div id="nhia-parent-donation-report" style={{ background: '#fff', borderRadius: 14, border: '1px solid #cbd5e1', padding: 14 }}>
@@ -537,10 +509,8 @@ export default function FinanceModule({ onBack, user }) {
         </div>
       )}
 
-      {/* ================================================= */}
-      {/* TAB 3: ADMIN FINANCIAL & ARREARS REPORT           */}
-      {/* ================================================= */}
-      {tab === 'admin_report' && (
+      {/* TAB 3: ADMIN FINANCIAL REPORT */}
+      {tab === 'admin_report' && isAdmin && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Class Arrears & Financial Report</div>
@@ -605,7 +575,6 @@ export default function FinanceModule({ onBack, user }) {
             </>
           )}
 
-          {/* Campus-wide Summary */}
           <button
             onClick={generateCampusSummary}
             disabled={loading}
