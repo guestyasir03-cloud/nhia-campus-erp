@@ -357,11 +357,18 @@ export default function LeaveModule({ user, onBack }) {
     }
   }
 
-  async function handleDeleteLeave(id) {
-    if (!isAdmin) return;
+  function canDelete(item) {
+    if (isAdmin) return true;
+    const currentName = (user?.name || '').trim().toLowerCase();
+    const issuerName = (item?.issued_by || '').trim().toLowerCase();
+    return Boolean(currentName && issuerName && currentName === issuerName);
+  }
+
+  async function handleDeleteLeave(item) {
+    if (!canDelete(item)) return;
     if (!window.confirm('Permanently delete this leave record?')) return;
-    setLeaves(prev => prev.filter(l => l.id !== id));
-    await supabase.from('student_leaves').delete().eq('id', id);
+    setLeaves(prev => prev.filter(l => l.id !== item.id));
+    await supabase.from('student_leaves').delete().eq('id', item.id);
   }
 
   function handleExportCSV() {
@@ -619,9 +626,9 @@ export default function LeaveModule({ user, onBack }) {
                         >
                           <Share2 size={14} />
                         </button>
-                        {isAdmin && (
+                       {canDelete(item) && (
                           <button
-                            onClick={() => handleDeleteLeave(item.id)}
+                            onClick={() => handleDeleteLeave(item)}
                             title="Delete"
                             style={{ padding: '8px 9px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
                           >
