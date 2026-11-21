@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
+import { useClassAccess } from '../lib/useClassAccess';
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -39,7 +40,7 @@ function getPendingMonths(lastPaidYM, refYM = getCurrentYM()) {
 export default function FinanceModule({ onBack, user }) {
   const isStudent = user?.role === 'student';
   const [tab, setTab] = useState('ledger'); // ledger | parent_report | admin_report
-  const [classes, setClasses] = useState([]);
+  const { isAdmin, allowedClasses: classes, isClassTeacher, loading: accessLoading } = useClassAccess(user);
   const [selectedClass, setSelectedClass] = useState('');
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
@@ -334,6 +335,22 @@ export default function FinanceModule({ onBack, user }) {
       </div>
     );
   }
+  // Lock for non-class teachers
+  if (!isStudent && !accessLoading && !isClassTeacher) {
+    return (
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+            <ChevronLeft size={20} />
+          </button>
+          <h2 style={{ fontSize: 20, fontWeight: 800 }}>Finance & Donations</h2>
+        </div>
+        <div style={{ background: '#fff', padding: 24, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center', color: '#64748b', fontSize: 13, fontWeight: 600 }}>
+          Finance ledger access is restricted to assigned Class Teachers. Contact admin.
+        </div>
+      </div>
+    );
+  }
 
   // ==========================================
   // ADMIN / STAFF VIEW
@@ -353,7 +370,7 @@ export default function FinanceModule({ onBack, user }) {
         {[
           { id: 'ledger', label: 'Donation Ledger' },
           { id: 'parent_report', label: 'Parent Report' },
-          { id: 'admin_report', label: 'Financial Report' }
+          (isAdmin ? [{ id: 'admin_report', label: 'Financial Report' }] : [])
         ].map(t => (
           <button
             key={t.id}
