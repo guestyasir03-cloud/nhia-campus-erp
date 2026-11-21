@@ -95,6 +95,8 @@ export default function LeaveModule({ user, onBack }) {
   const [filterStatus, setFilterStatus] = useState('All');
   const [reportSearch, setReportSearch] = useState('');
   const [reportSort, setReportSort] = useState('date_desc'); // 'date_desc' | 'class_asc' | 'name_asc' | 'duration_desc'
+  const [reportView, setReportView] = useState('folders'); // 'folders' | 'table'
+  const [openReportDates, setOpenReportDates] = useState({});
   const [insightSearch, setInsightSearch] = useState('');
   const [selectedStudentReport, setSelectedStudentReport] = useState(null);
 
@@ -231,6 +233,17 @@ export default function LeaveModule({ user, onBack }) {
       return (b.start_date || '').localeCompare(a.start_date || '') || (b.id - a.id);
     });
   }, [leaves, filterClass, filterStatus, filterFrom, filterTo, reportSearch, reportSort]);
+
+  const groupedReportsByDate = useMemo(() => {
+    const map = {};
+    filteredReports.forEach(r => {
+      const dt = r.start_date || 'Unknown Date';
+      if (!map[dt]) map[dt] = { date: dt, rows: [], overdueCount: 0 };
+      map[dt].rows.push(r);
+      if (isLeaveOverdue(r)) map[dt].overdueCount += 1;
+    });
+    return Object.values(map).sort((a, b) => b.date.localeCompare(a.date));
+  }, [filteredReports]);
 
   // Insights calculations
   const insights = useMemo(() => {
@@ -751,10 +764,10 @@ export default function LeaveModule({ user, onBack }) {
         </form>
       )}
 
-      {/* TAB 3: REPORTS */}
+     {/* TAB 3: REPORTS */}
       {tab === 'reports' && (
         <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
             <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
             <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
             <select value={filterClass} onChange={e => setFilterClass(e.target.value)} style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }}>
@@ -768,6 +781,7 @@ export default function LeaveModule({ user, onBack }) {
               <option value="Upcoming">Upcoming</option>
             </select>
           </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 8, marginBottom: 10 }}>
             <div style={{ position: 'relative' }}>
               <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 9, top: 10 }} />
@@ -786,6 +800,30 @@ export default function LeaveModule({ user, onBack }) {
             </select>
           </div>
 
+          {/* VIEW TOGGLE: DAY FOLDERS VS FULL TABLE */}
+          <div style={{ display: 'flex', gap: 6, background: '#f1f5f9', padding: 4, borderRadius: 9, marginBottom: 10 }}>
+            <button
+              onClick={() => setReportView('folders')}
+              style={{
+                flex: 1, padding: '7px', borderRadius: 7, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                background: reportView === 'folders' ? '#1e293b' : 'transparent',
+                color: reportView === 'folders' ? '#fff' : '#475569'
+              }}
+            >
+              📁 Day Folders ({groupedReportsByDate.length})
+            </button>
+            <button
+              onClick={() => setReportView('table')}
+              style={{
+                flex: 1, padding: '7px', borderRadius: 7, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                background: reportView === 'table' ? '#1e293b' : 'transparent',
+                color: reportView === 'table' ? '#fff' : '#475569'
+              }}
+            >
+              📋 Full Table ({filteredReports.length})
+            </button>
+          </div>
+
           <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
             <button onClick={() => exportReportPDF('leave-report-print', `Leave_Report_${filterClass}`)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>PDF</button>
             <button onClick={() => exportReportJPEG('leave-report-print', `Leave_Report_${filterClass}`)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>JPEG</button>
@@ -793,50 +831,128 @@ export default function LeaveModule({ user, onBack }) {
           </div>
 
           <div id="leave-report-print" style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: '#1e293b', color: '#fff' }}>
-                  <th style={{ padding: 7, textAlign: 'left' }}>Date</th>
-                  <th style={{ padding: 7, textAlign: 'left' }}>Student</th>
-                  <th style={{ padding: 7, textAlign: 'left' }}>Class</th>
-                  <th style={{ padding: 7, textAlign: 'left' }}>Duration</th>
-                  <th style={{ padding: 7, textAlign: 'left' }}>Status</th>
-                  {isAdmin && <th style={{ padding: 7, textAlign: 'center' }}>Action</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredReports.length === 0 ? (
-                  <tr><td colSpan={isAdmin ? 6 : 5} style={{ textAlign: 'center', padding: 14, color: '#94a3b8' }}>No records found.</td></tr>
+            {reportView === 'folders' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {groupedReportsByDate.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: 16, color: '#94a3b8', fontSize: 13 }}>No records found.</div>
                 ) : (
-                  filteredReports.map(r => (
-                    <tr key={r.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: 7 }}>{r.start_date}</td>
-                      <td style={{ padding: 7, fontWeight: 600 }}>{r.student_name}</td>
-                      <td style={{ padding: 7 }}>{r.class_name}</td>
-                      <td style={{ padding: 7 }}>{formatDuration(calculateLeaveHours(r))}</td>
-                      <td style={{ padding: 7, fontWeight: 700, color: isLeaveOverdue(r) ? '#dc2626' : r.status === 'Active' ? '#2e44d2' : '#16a34a' }}>
-                        {isLeaveOverdue(r) ? 'Overdue' : r.status}
-                      </td>
-                      {isAdmin && (
-                        <td style={{ padding: 7, textAlign: 'center' }}>
-                          <button
-                            onClick={() => handleDeleteLeave(r)}
-                            title="Delete Record"
-                            style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </td>
-                      )}
-                    </tr>
-                  ))
+                  groupedReportsByDate.map(group => {
+                    const isOpen = Boolean(openReportDates[group.date] || reportSearch.trim());
+                    return (
+                      <div key={group.date} style={{ border: '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden' }}>
+                        <div
+                          onClick={() => setOpenReportDates(prev => ({ ...prev, [group.date]: !prev[group.date] }))}
+                          style={{
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            padding: '10px 12px', background: isOpen ? '#eff6ff' : '#f8fafc', cursor: 'pointer'
+                          }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <ChevronRight
+                              size={16}
+                              color="#2e44d2"
+                              style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}
+                            />
+                            <span style={{ fontWeight: 800, fontSize: 13, color: '#0f172a' }}>📅 {group.date}</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {group.overdueCount > 0 && (
+                              <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontSize: 10, fontWeight: 800, padding: '2px 7px', borderRadius: 20 }}>
+                                {group.overdueCount} Late
+                              </span>
+                            )}
+                            <span style={{ background: '#2e44d2', color: '#fff', fontSize: 11, fontWeight: 800, padding: '2px 9px', borderRadius: 20 }}>
+                              {group.rows.length} Students
+                            </span>
+                          </div>
+                        </div>
+
+                        {isOpen && (
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ background: '#1e293b', color: '#fff' }}>
+                                <th style={{ padding: 7, textAlign: 'left' }}>Student</th>
+                                <th style={{ padding: 7, textAlign: 'left' }}>Class</th>
+                                <th style={{ padding: 7, textAlign: 'left' }}>Duration</th>
+                                <th style={{ padding: 7, textAlign: 'left' }}>Status</th>
+                                {isAdmin && <th style={{ padding: 7, textAlign: 'center' }}>Action</th>}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.rows.map(r => (
+                                <tr key={r.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                                  <td style={{ padding: 7, fontWeight: 600 }}>{r.student_name}</td>
+                                  <td style={{ padding: 7 }}>{r.class_name}</td>
+                                  <td style={{ padding: 7 }}>{formatDuration(calculateLeaveHours(r))}</td>
+                                  <td style={{ padding: 7, fontWeight: 700, color: isLeaveOverdue(r) ? '#dc2626' : r.status === 'Active' ? '#2e44d2' : '#16a34a' }}>
+                                    {isLeaveOverdue(r) ? 'Overdue' : r.status}
+                                  </td>
+                                  {isAdmin && (
+                                    <td style={{ padding: 7, textAlign: 'center' }}>
+                                      <button
+                                        onClick={() => handleDeleteLeave(r)}
+                                        title="Delete Record"
+                                        style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
+                                      >
+                                        <Trash2 size={13} />
+                                      </button>
+                                    </td>
+                                  )}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
-              </tbody>
-            </table>
+              </div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: '#1e293b', color: '#fff' }}>
+                    <th style={{ padding: 7, textAlign: 'left' }}>Date</th>
+                    <th style={{ padding: 7, textAlign: 'left' }}>Student</th>
+                    <th style={{ padding: 7, textAlign: 'left' }}>Class</th>
+                    <th style={{ padding: 7, textAlign: 'left' }}>Duration</th>
+                    <th style={{ padding: 7, textAlign: 'left' }}>Status</th>
+                    {isAdmin && <th style={{ padding: 7, textAlign: 'center' }}>Action</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredReports.length === 0 ? (
+                    <tr><td colSpan={isAdmin ? 6 : 5} style={{ textAlign: 'center', padding: 14, color: '#94a3b8' }}>No records found.</td></tr>
+                  ) : (
+                    filteredReports.map(r => (
+                      <tr key={r.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: 7 }}>{r.start_date}</td>
+                        <td style={{ padding: 7, fontWeight: 600 }}>{r.student_name}</td>
+                        <td style={{ padding: 7 }}>{r.class_name}</td>
+                        <td style={{ padding: 7 }}>{formatDuration(calculateLeaveHours(r))}</td>
+                        <td style={{ padding: 7, fontWeight: 700, color: isLeaveOverdue(r) ? '#dc2626' : r.status === 'Active' ? '#2e44d2' : '#16a34a' }}>
+                          {isLeaveOverdue(r) ? 'Overdue' : r.status}
+                        </td>
+                        {isAdmin && (
+                          <td style={{ padding: 7, textAlign: 'center' }}>
+                            <button
+                              onClick={() => handleDeleteLeave(r)}
+                              title="Delete Record"
+                              style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        )}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}
-
      {/* TAB 4: INSIGHTS & INDIVIDUAL STUDENT PROOF REPORT */}
       {tab === 'insights' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -887,7 +1003,7 @@ export default function LeaveModule({ user, onBack }) {
 
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                      <thead>
+                     <thead>
                         <tr style={{ background: '#1e293b', color: '#fff' }}>
                           <th style={{ padding: 6, textAlign: 'left' }}>Out Date & Time</th>
                           <th style={{ padding: 6, textAlign: 'left' }}>Return Date & Time</th>
@@ -895,6 +1011,7 @@ export default function LeaveModule({ user, onBack }) {
                           <th style={{ padding: 6, textAlign: 'left' }}>Duration</th>
                           <th style={{ padding: 6, textAlign: 'left' }}>Issued By</th>
                           <th style={{ padding: 6, textAlign: 'left' }}>Status</th>
+                          {isAdmin && <th style={{ padding: 6, textAlign: 'center' }}>Action</th>}
                         </tr>
                       </thead>
                       <tbody>
@@ -908,6 +1025,17 @@ export default function LeaveModule({ user, onBack }) {
                             <td style={{ padding: 6, fontWeight: 700, color: isLeaveOverdue(l) ? '#dc2626' : l.status === 'Active' ? '#2e44d2' : '#16a34a' }}>
                               {isLeaveOverdue(l) ? 'Overdue' : l.status}
                             </td>
+                            {isAdmin && (
+                              <td style={{ padding: 6, textAlign: 'center' }}>
+                                <button
+                                  onClick={() => handleDeleteLeave(l)}
+                                  title="Delete Entry"
+                                  style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </td>
+                            )}
                           </tr>
                         ))}
                       </tbody>
