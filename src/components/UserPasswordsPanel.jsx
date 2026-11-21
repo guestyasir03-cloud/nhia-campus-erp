@@ -15,7 +15,8 @@ export default function UserPasswordsPanel({ user }) {
   const [msg, setMsg] = useState('');
 
   // Only Admin can view this panel
-  const isAdmin = (user?.role || '').toLowerCase() === 'admin';
+  const role = (user?.role || '').toLowerCase();
+const isAdmin = role.includes('admin') || role.includes('principal') || role.includes('director') || user?.isAdmin === true;
 
   useEffect(() => {
     if (isAdmin) loadUsers(tab);
