@@ -358,11 +358,12 @@ export default function LeaveModule({ user, onBack }) {
   }
 
   function canDelete(item) {
-    if (isAdmin) return true;
-    const currentName = (user?.name || '').trim().toLowerCase();
-    const issuerName = (item?.issued_by || '').trim().toLowerCase();
-    return Boolean(currentName && issuerName && currentName === issuerName);
-  }
+  if (isAdmin) return true;
+  if (item?.status === 'Returned') return false;
+  const currentName = (user?.name || '').trim().toLowerCase();
+  const issuerName = (item?.issued_by || '').trim().toLowerCase();
+  return Boolean(currentName && issuerName && currentName === issuerName);
+}
 
   async function handleDeleteLeave(item) {
     if (!canDelete(item)) return;
@@ -752,11 +753,12 @@ export default function LeaveModule({ user, onBack }) {
                   <th style={{ padding: 7, textAlign: 'left' }}>Class</th>
                   <th style={{ padding: 7, textAlign: 'left' }}>Duration</th>
                   <th style={{ padding: 7, textAlign: 'left' }}>Status</th>
+                  {isAdmin && <th style={{ padding: 7, textAlign: 'center' }}>Action</th>}
                 </tr>
               </thead>
               <tbody>
                 {filteredReports.length === 0 ? (
-                  <tr><td colSpan={5} style={{ textAlign: 'center', padding: 14, color: '#94a3b8' }}>No records found.</td></tr>
+                  <tr><td colSpan={isAdmin ? 6 : 5} style={{ textAlign: 'center', padding: 14, color: '#94a3b8' }}>No records found.</td></tr>
                 ) : (
                   filteredReports.map(r => (
                     <tr key={r.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
@@ -767,6 +769,17 @@ export default function LeaveModule({ user, onBack }) {
                       <td style={{ padding: 7, fontWeight: 700, color: isLeaveOverdue(r) ? '#dc2626' : r.status === 'Active' ? '#2e44d2' : '#16a34a' }}>
                         {isLeaveOverdue(r) ? 'Overdue' : r.status}
                       </td>
+                      {isAdmin && (
+                        <td style={{ padding: 7, textAlign: 'center' }}>
+                          <button
+                            onClick={() => handleDeleteLeave(r)}
+                            title="Delete Record"
+                            style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))
                 )}
