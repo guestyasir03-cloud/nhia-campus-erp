@@ -9,6 +9,8 @@ export default function ExamsModule({ onBack, user }) {
   const [classes, setClasses] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [selectedAssignment, setSelectedAssignment] = useState('');
+  const [activeConfig, setActiveConfig] = useState(null); // { has_w1_w4, has_midterm, has_hifz }
+  const [examMode, setExamMode] = useState('w1_w4'); // 'w1_w4' | 'midterm' | 'hifz'
   const [selectedClass, setSelectedClass] = useState('');
   const [subject, setSubject] = useState('');
   const [students, setStudents] = useState([]);
@@ -36,15 +38,16 @@ export default function ExamsModule({ onBack, user }) {
   async function loadClasses() {
     const { data } = await supabase.from('students').select('class_name');
     if (data) {
-      setClasses([...new Set(data.map(d => d.class_name).filter(Boolean))].sort());
+      setClasses([...new Set(data.map(d => d.class_name).filter(Boolean))].filter(c => c !== 'ALUMNI').sort());
     }
   }
 
   async function loadAssignments() {
     const { data, error } = await supabase
-      .from('teacher_assignments')
+      .from('subject_assignments')
       .select('*')
-      .order('class_name');
+      .order('class_name')
+      .order('subject_name');
 
     if (error || !data) {
       setAssignments([]);
@@ -68,11 +71,24 @@ export default function ExamsModule({ onBack, user }) {
     setAssignments(filtered);
   }
 
+  // Helper: Get DB subject key based on mode so W1-W4 & Midterm never overwrite each other
+  function getDbSubjectKey(baseSub, mode) {
+    const clean = baseSub.trim();
+    if (mode === 'midterm') {
+      return clean.toUpperCase().includes('MIDTERM') ? clean : `${clean} (Midterm)`;
+    }
+    if (mode === 'hifz') {
+      return clean.toUpperCase().includes('HIFZ') ? clean : `${clean} (Hifz)`;
+    }
+    return clean;
+  }
+
   function handleAssignmentSelect(val) {
     setSelectedAssignment(val);
     if (!val) {
       setSelectedClass('');
       setSubject('');
+      setActiveConfig(null);
       setStudents([]);
       return;
     }
@@ -80,22 +96,43 @@ export default function ExamsModule({ onBack, user }) {
     if (found) {
       setSelectedClass(found.class_name);
       setSubject(found.subject_name);
-      loadForEntry(found.class_name, found.subject_name);
+      setActiveConfig(found);
+
+      // Pick first enabled mode automatically
+      const defaultMode = found.has_w1_w4
+        ? 'w1_w4'
+        : found.has_midterm
+        ? 'midterm'
+        : found.has_hifz
+        ? 'hifz'
+        : 'w1_w4';
+
+      setExamMode(defaultMode);
+      loadForEntry(found.class_name, found.subject_name, defaultMode);
     }
   }
 
-  async function loadForEntry(clsParam, subParam) {
+  function handleModeSwitch(mode) {
+    setExamMode(mode);
+    if (selectedClass && subject) {
+      loadForEntry(selectedClass, subject, mode);
+    }
+  }
+
+  async function loadForEntry(clsParam, subParam, modeParam) {
     const targetClass = typeof clsParam === 'string' ? clsParam : selectedClass;
     const targetSub = typeof subParam === 'string' ? subParam : subject;
+    const targetMode = modeParam || examMode;
 
     if (!targetClass || !targetSub.trim()) return alert('ക്ലാസ്സും വിഷയവും നൽകുക!');
     setLoading(true);
     setMsg('');
-    const cleanSub = targetSub.trim();
+
+    const dbSubject = getDbSubjectKey(targetSub, targetMode);
 
     const [{ data: stData }, { data: mkData }] = await Promise.all([
       supabase.from('students').select('adm_no, name').eq('class_name', targetClass).order('name'),
-      supabase.from('marks').select('*').eq('class_name', targetClass).eq('subject', cleanSub)
+      supabase.from('marks').select('*').eq('class_name', targetClass).eq('subject', dbSubject)
     ]);
 
     const map = {};
@@ -114,7 +151,11 @@ export default function ExamsModule({ onBack, user }) {
     setLoading(false);
   }
 
-  const isHifzOrMidterm = subject.toUpperCase().includes('HIFZ') || subject.toUpperCase().includes('MIDTERM');
+  const isSingleMarkMode =
+    examMode === 'midterm' ||
+    examMode === 'hifz' ||
+    subject.toUpperCase().includes('HIFZ') ||
+    subject.toUpperCase().includes('MIDTERM');
 
   function updateMark(admNo, field, value, max) {
     if (value !== '' && Number(value) > max) {
@@ -130,19 +171,19 @@ export default function ExamsModule({ onBack, user }) {
   async function saveMarks() {
     setLoading(true);
     setMsg('');
-    const cleanSub = subject.trim();
+    const dbSubject = getDbSubjectKey(subject, examMode);
     const rows = [];
 
     students.forEach(s => {
       const m = marksMap[s.adm_no];
       if (!m) return;
-      if (isHifzOrMidterm) {
+      if (isSingleMarkMode) {
         if (m.total === '') return;
         const tot = Number(m.total) || 0;
         rows.push({
           adm_no: s.adm_no,
           class_name: selectedClass,
-          subject: cleanSub,
+          subject: dbSubject,
           teacher_email: user?.name || 'Admin',
           w1: tot,
           w2: null,
@@ -163,7 +204,7 @@ export default function ExamsModule({ onBack, user }) {
         rows.push({
           adm_no: s.adm_no,
           class_name: selectedClass,
-          subject: cleanSub,
+          subject: dbSubject,
           teacher_email: user?.name || 'Admin',
           w1,
           w2,
@@ -184,7 +225,7 @@ export default function ExamsModule({ onBack, user }) {
     const { error } = await supabase.from('marks').upsert(rows, { onConflict: 'adm_no,subject,academic_year' });
     setLoading(false);
     if (error) setMsg('❌ Error: ' + error.message);
-    else setMsg(`✅ ${rows.length} കുട്ടികളുടെ മാർക്കുകൾ വിജയകരമായി സേവ് ചെയ്തു!`);
+    else setMsg(`✅ ${rows.length} കുട്ടികളുടെ ${dbSubject} മാർക്കുകൾ സേവ് ചെയ്തു!`);
   }
 
   async function generateClassReport() {
@@ -198,8 +239,8 @@ export default function ExamsModule({ onBack, user }) {
     const subjects = [...new Set((mkData || []).map(m => m.subject))].sort();
     let maxFinal = 0;
     subjects.forEach(sub => {
-      const isHifz = sub.toUpperCase().includes('HIFZ') || sub.toUpperCase().includes('MIDTERM');
-      maxFinal += isHifz ? 100 : 30;
+      const isSingle = sub.toUpperCase().includes('HIFZ') || sub.toUpperCase().includes('MIDTERM');
+      maxFinal += isSingle ? 100 : 30;
     });
 
     const rows = (stData || []).map(s => {
@@ -241,8 +282,8 @@ export default function ExamsModule({ onBack, user }) {
     const marksList = (mk || []).map(m => {
       const isHifz = m.subject.toUpperCase().includes('HIFZ');
       const isMid = m.subject.toUpperCase().includes('MIDTERM');
-      const maxM = isHifz ? 100 : 30;
-      const passM = isHifz ? 45 : 12;
+      const maxM = isHifz || isMid ? 100 : 30;
+      const passM = isHifz || isMid ? 40 : 12;
       const scored = Number(m.final_mark) || 0;
       grandTotal += scored;
       totalMax += maxM;
@@ -281,6 +322,15 @@ export default function ExamsModule({ onBack, user }) {
       <h2 style={{ fontSize: 20, fontWeight: 800 }}>{title}</h2>
     </div>
   );
+
+  // Enabled modes for currently selected subject
+  const enabledModes = activeConfig
+    ? [
+        ...(activeConfig.has_w1_w4 ? [{ id: 'w1_w4', label: 'W1–W4 (CCE)' }] : []),
+        ...(activeConfig.has_midterm ? [{ id: 'midterm', label: 'Midterm (100)' }] : []),
+        ...(activeConfig.has_hifz ? [{ id: 'hifz', label: 'Hifz / Viva (100)' }] : [])
+      ]
+    : [];
 
   if (view === 'menu') {
     return (
@@ -334,7 +384,7 @@ export default function ExamsModule({ onBack, user }) {
                 <option value="">-- Select Assignment --</option>
                 {assignments.map(a => (
                   <option key={a.id} value={a.id}>
-                    {a.class_name} - {a.subject_name}{isAdmin ? ` (${a.staff_name})` : ''}
+                    {a.class_name} - {a.subject_name}{isAdmin && a.staff_name ? ` (${a.staff_name})` : ''}
                   </option>
                 ))}
               </select>
@@ -346,20 +396,40 @@ export default function ExamsModule({ onBack, user }) {
               </div>
             )}
 
+            {/* DYNAMIC EXAM MODE SWITCHER (W1-W4 / MIDTERM / HIFZ) */}
+            {enabledModes.length > 1 && (
+              <div style={{ display: 'flex', background: '#f1f5f9', padding: 4, borderRadius: 10, gap: 4, marginTop: 4 }}>
+                {enabledModes.map(m => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => handleModeSwitch(m.id)}
+                    style={{
+                      flex: 1, padding: '8px 6px', borderRadius: 8, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer',
+                      background: examMode === m.id ? '#2e44d2' : 'transparent',
+                      color: examMode === m.id ? '#fff' : '#475569'
+                    }}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {isAdmin && (
               <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: 12, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>OR MANUAL ENTRY (ADMIN)</div>
-                <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedAssignment(''); }} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}>
+                <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedAssignment(''); setActiveConfig(null); }} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}>
                   <option value="">-- ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക --</option>
                   {classes.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <input
                   value={subject}
-                  onChange={e => { setSubject(e.target.value); setSelectedAssignment(''); }}
+                  onChange={e => { setSubject(e.target.value); setSelectedAssignment(''); setActiveConfig(null); }}
                   placeholder="വിഷയം (ഉദാ: Fiqh, English, Hifz)"
                   style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}
                 />
-                <button onClick={() => loadForEntry()} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                <button onClick={() => loadForEntry(selectedClass, subject, 'w1_w4')} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
                   Load Students
                 </button>
               </div>
@@ -371,14 +441,14 @@ export default function ExamsModule({ onBack, user }) {
           {students.length > 0 && !loading && (
             <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
               <div style={{ padding: '10px 14px', background: '#eef2ff', fontSize: 13, fontWeight: 700, color: '#2e44d2' }}>
-                {selectedClass} — {subject} ({students.length} Students)
+                {selectedClass} — {getDbSubjectKey(subject, examMode)} ({students.length} Students)
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                     <tr>
                       <th style={{ padding: 10, textAlign: 'left' }}>Student</th>
-                      {isHifzOrMidterm ? (
+                      {isSingleMarkMode ? (
                         <th style={{ padding: 10 }}>Mark (100)</th>
                       ) : (
                         <>
@@ -398,7 +468,7 @@ export default function ExamsModule({ onBack, user }) {
                           <td style={{ padding: 10, textAlign: 'left', fontWeight: 600 }}>
                             {s.name}<div style={{ fontSize: 10, color: '#64748b' }}>{s.adm_no}</div>
                           </td>
-                          {isHifzOrMidterm ? (
+                          {isSingleMarkMode ? (
                             <td style={{ padding: 6 }}>
                               <input type="number" value={m.total} onChange={e => updateMark(s.adm_no, 'total', e.target.value, 100)} style={{ width: 65, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} />
                             </td>
