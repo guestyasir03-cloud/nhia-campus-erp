@@ -15,7 +15,7 @@ import StaffAppraisalModule from './modules/StaffAppraisalModule';
 import AnnouncementsModule from './modules/AnnouncementsModule';
 import StaffModule from './modules/StaffModule';
 import ReportsModule from './modules/ReportsModule';
-
+import YearResetPanel from './components/YearResetPanel';
 const ICON_MAP = {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
   Briefcase, Bell, BarChart3, Sliders, Library, Building
@@ -403,31 +403,29 @@ export default function App() {
           <StaffModule onBack={() => setActiveModule(null)} />
         ) : activeModule === 'reports' ? (
           <ReportsModule onBack={() => setActiveModule(null)} />
-        ) : activeModule === 'settings' ? (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
+       ) : activeModule === 'settings' ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <button onClick={() => setActiveModule(null)} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
                 <ChevronLeft size={20} />
               </button>
               <h2 style={{ fontSize: 20, fontWeight: 800 }}>Settings</h2>
             </div>
 
-            {/* ACADEMIC YEAR & RESET */}
-            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 16 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Academic Year & Reset</div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <select value={academicYear} onChange={e => handleYearChange(e.target.value)} style={{ flex: 1, padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600 }}>
-                  <option value="2025–26">2025–26</option>
-                  <option value="2026–27">2026–27</option>
-                  <option value="2027–28">2027–28</option>
-                  <option value="2028–29">2028–29</option>
-                  <option value="2029–30">2029–30</option>
-                </select>
-              </div>
-              <button onClick={handleYearReset} disabled={resetting} style={{ width: '100%', padding: '11px', borderRadius: 10, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
-                {resetting ? 'Resetting data...' : 'Reset Old Year Data (New Year Start)'}
-              </button>
+            {/* ACADEMIC YEAR SELECTOR */}
+            <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Academic Year</div>
+              <select value={academicYear} onChange={e => handleYearChange(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600 }}>
+                <option value="2025–26">2025–26</option>
+                <option value="2026–27">2026–27</option>
+                <option value="2027–28">2027–28</option>
+                <option value="2028–29">2028–29</option>
+                <option value="2029–30">2029–30</option>
+              </select>
             </div>
+
+            {/* ADVANCED SYSTEM RESET */}
+            <YearResetPanel user={user} />
 
             {/* USER CATEGORIES / ROLES MANAGER */}
             <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 16 }}>
