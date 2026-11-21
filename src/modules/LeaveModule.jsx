@@ -93,6 +93,8 @@ export default function LeaveModule({ user, onBack }) {
   const [filterTo, setFilterTo] = useState('');
   const [filterClass, setFilterClass] = useState('All');
   const [filterStatus, setFilterStatus] = useState('All');
+  const [insightSearch, setInsightSearch] = useState('');
+  const [selectedStudentReport, setSelectedStudentReport] = useState(null);
 
   useEffect(() => {
     loadInitialData();
@@ -798,30 +800,147 @@ export default function LeaveModule({ user, onBack }) {
         </div>
       )}
 
-      {/* TAB 4: INSIGHTS */}
+     {/* TAB 4: INSIGHTS & INDIVIDUAL STUDENT PROOF REPORT */}
       {tab === 'insights' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#dc2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <AlertTriangle size={15} /> Top 5 Leave Takers
-            </div>
-            {insights.studentRows.slice(0, 5).map((s, idx) => (
-              <div key={s.adm_no} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
-                <span>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🔹'} <b>{s.name}</b> <small style={{ color: '#64748b' }}>({s.class_name} • {s.count}x)</small></span>
-                <span style={{ fontWeight: 800, color: '#dc2626' }}>{formatDuration(s.totalHours)}</span>
-              </div>
-            ))}
-          </div>
+          {selectedStudentReport ? (() => {
+            const stLeaves = leaves.filter(l => String(l.adm_no) === String(selectedStudentReport.adm_no));
+            const totalHrs = stLeaves.reduce((acc, l) => acc + (l.status === 'Upcoming' ? 0 : calculateLeaveHours(l)), 0);
+            const shareSummaryWA = () => {
+              const lines = stLeaves.slice(0, 15).map((l, i) =>
+                `${i + 1}. ${l.start_date} (${l.leave_type}) - ${formatDuration(calculateLeaveHours(l))} [${l.status}]`
+              ).join('\n');
+              const text = `📄 *STUDENT LEAVE HISTORY REPORT*\nStudent: *${selectedStudentReport.name}* (Adm: ${selectedStudentReport.adm_no})\nClass: ${selectedStudentReport.class_name}\nTotal Leaves: *${stLeaves.length}* | Total Time: *${formatDuration(totalHrs)}*\n\n${lines}`;
+              window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+            };
+            const exportStudentCSV = () => {
+              const headers = ['Date', 'Out Time', 'Return Date', 'Return Time', 'Duration', 'Type', 'Reason', 'Issued By', 'Status'];
+              const rows = stLeaves.map(l => [
+                l.start_date, formatAMPM(l.start_time) || '-', l.return_date || '-', formatAMPM(l.return_time) || '-',
+                formatDuration(calculateLeaveHours(l)), l.leave_type, l.reason || '-', l.issued_by, l.status
+              ]);
+              exportReportCSV(`Leave_History_${selectedStudentReport.adm_no}_${selectedStudentReport.name}`, headers, rows);
+            };
 
-          <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Class-wise Total Leave Duration</div>
-            {insights.classRows.map(([cls, hrs]) => (
-              <div key={cls} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
-                <span style={{ fontWeight: 600 }}>{cls}</span>
-                <span style={{ fontWeight: 800, color: '#dc2626' }}>{formatDuration(hrs)}</span>
+            return (
+              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <button onClick={() => setSelectedStudentReport(null)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                    <ArrowLeft size={14} /> Back to Insights
+                  </button>
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    <button onClick={() => exportReportPDF('student-proof-print', `Leave_Proof_${selectedStudentReport.name}`)} style={{ padding: '6px 10px', borderRadius: 7, border: 'none', background: '#dc2626', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>PDF</button>
+                    <button onClick={() => exportReportJPEG('student-proof-print', `Leave_Proof_${selectedStudentReport.name}`)} style={{ padding: '6px 10px', borderRadius: 7, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>JPEG</button>
+                    <button onClick={exportStudentCSV} style={{ padding: '6px 10px', borderRadius: 7, border: 'none', background: '#0f172a', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>CSV</button>
+                    <button onClick={shareSummaryWA} style={{ padding: '6px 10px', borderRadius: 7, border: 'none', background: '#16a34a', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>WhatsApp</button>
+                  </div>
+                </div>
+
+                <div id="student-proof-print" style={{ padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: '#fff' }}>
+                  <div style={{ borderBottom: '2px solid #1e293b', paddingBottom: 8, marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>{selectedStudentReport.name}</div>
+                      <div style={{ fontSize: 12, color: '#475569' }}>Adm No: <b>{selectedStudentReport.adm_no}</b> • Class: <b>{selectedStudentReport.class_name}</b></div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 12, color: '#64748b' }}>Total Leaves: <b style={{ color: '#0f172a' }}>{stLeaves.length}</b></div>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: '#dc2626' }}>Total Time: {formatDuration(totalHrs)}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                      <thead>
+                        <tr style={{ background: '#1e293b', color: '#fff' }}>
+                          <th style={{ padding: 6, textAlign: 'left' }}>Out Date & Time</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>Return Date & Time</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>Type / Reason</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>Duration</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>Issued By</th>
+                          <th style={{ padding: 6, textAlign: 'left' }}>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stLeaves.map(l => (
+                          <tr key={l.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
+                            <td style={{ padding: 6 }}>{l.start_date} {l.start_time ? `@ ${formatAMPM(l.start_time)}` : ''}</td>
+                            <td style={{ padding: 6 }}>{l.return_date ? `${l.return_date} @ ${formatAMPM(l.return_time)}` : '-'}</td>
+                            <td style={{ padding: 6 }}><b>{l.leave_type}</b>{l.reason ? ` (${l.reason})` : ''}</td>
+                            <td style={{ padding: 6, fontWeight: 700 }}>{formatDuration(calculateLeaveHours(l))}</td>
+                            <td style={{ padding: 6 }}>{l.issued_by}</td>
+                            <td style={{ padding: 6, fontWeight: 700, color: isLeaveOverdue(l) ? '#dc2626' : l.status === 'Active' ? '#2e44d2' : '#16a34a' }}>
+                              {isLeaveOverdue(l) ? 'Overdue' : l.status}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+            );
+          })() : (
+            <>
+              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#dc2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <AlertTriangle size={15} /> Top 5 Leave Takers (Click for Full Proof)
+                </div>
+                {insights.studentRows.slice(0, 5).map((s, idx) => (
+                  <div
+                    key={s.adm_no}
+                    onClick={() => setSelectedStudentReport(s)}
+                    style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 4px', borderBottom: '1px solid #f1f5f9', fontSize: 13, cursor: 'pointer' }}
+                  >
+                    <span>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🔹'} <b>{s.name}</b> <small style={{ color: '#64748b' }}>({s.class_name} • {s.count}x)</small></span>
+                    <span style={{ fontWeight: 800, color: '#dc2626' }}>{formatDuration(s.totalHours)} →</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Class-wise Total Leave Duration</div>
+                {insights.classRows.map(([cls, hrs]) => (
+                  <div key={cls} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
+                    <span style={{ fontWeight: 600 }}>{cls}</span>
+                    <span style={{ fontWeight: 800, color: '#dc2626' }}>{formatDuration(hrs)}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>All Students Leave Record (Click Any Student)</div>
+                <input
+                  value={insightSearch}
+                  onChange={e => setInsightSearch(e.target.value)}
+                  placeholder="Search student name, Adm No, or class..."
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, marginBottom: 10, boxSizing: 'border-box' }}
+                />
+                <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                  {insights.studentRows
+                    .filter(s => {
+                      const q = insightSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return (s.name || '').toLowerCase().includes(q) || String(s.adm_no).includes(q) || (s.class_name || '').toLowerCase().includes(q);
+                    })
+                    .map(s => (
+                      <div
+                        key={s.adm_no}
+                        onClick={() => setSelectedStudentReport(s)}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 6px', borderBottom: '1px solid #f1f5f9', fontSize: 12, cursor: 'pointer' }}
+                      >
+                        <div>
+                          <div style={{ fontWeight: 700, color: '#0f172a' }}>{s.name}</div>
+                          <div style={{ fontSize: 11, color: '#64748b' }}>Adm: {s.adm_no} • {s.class_name} • {s.count} Leaves</div>
+                        </div>
+                        <span style={{ fontWeight: 800, color: '#2e44d2', background: '#eff6ff', padding: '4px 8px', borderRadius: 8 }}>
+                          {formatDuration(s.totalHours)} →
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 
