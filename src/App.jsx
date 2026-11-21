@@ -14,6 +14,7 @@ import SyllabusModule from './modules/SyllabusModule';
 import StaffAppraisalModule from './modules/StaffAppraisalModule';
 import AnnouncementsModule from './modules/AnnouncementsModule';
 import StaffModule from './modules/StaffModule';
+import UserPasswordsPanel from './components/UserPasswordsPanel';
 import ReportsModule from './modules/ReportsModule';
 import YearResetPanel from './components/YearResetPanel';
 const ICON_MAP = {
@@ -421,11 +422,16 @@ export default function App() {
                 <option value="2027–28">2027–28</option>
                 <option value="2028–29">2028–29</option>
                 <option value="2029–30">2029–30</option>
-              </select>
+          </select>
             </div>
+
+            {/* USER PASSWORDS & RESET (ADMIN ONLY) */}
+            <UserPasswordsPanel user={user} />
 
             {/* ADVANCED SYSTEM RESET */}
             <YearResetPanel user={user} />
+
+            {/* USER CATEGORIES / ROLES MANAGER */}
 
             {/* USER CATEGORIES / ROLES MANAGER */}
             <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 16 }}>
