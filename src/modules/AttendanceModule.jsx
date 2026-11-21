@@ -519,37 +519,6 @@ export default function AttendanceModule({ onBack, user }) {
       {/* MONTHLY LEDGER */}
       {mainTab === 'monthly' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {isAdmin && (
-            <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #c7d2fe', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#2e44d2', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <UserCheck size={16} /> Assign Class Teachers
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: 8 }}>
-                <select value={assignClass} onChange={e => setAssignClass(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
-                  <option value="">Class</option>
-                  {classes.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-                <select value={assignStaff} onChange={e => setAssignStaff(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
-                  <option value="">Select Teacher</option>
-                  {staffList.map(s => <option key={s.staff_name} value={s.staff_name}>{s.staff_name}</option>)}
-                </select>
-              </div>
-              <button onClick={handleAssignClassTeacher} disabled={loading} style={{ padding: 9, borderRadius: 8, border: 'none', background: '#1e293b', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                Assign
-              </button>
-
-              {classTeachers.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                  {classTeachers.map(ct => (
-                    <span key={ct.id} style={{ fontSize: 11, fontWeight: 700, background: '#eef2ff', color: '#1e3a8a', padding: '4px 8px', borderRadius: 8, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      {ct.class_name}: {ct.staff_name}
-                      <Trash2 size={12} style={{ cursor: 'pointer', color: '#dc2626' }} onClick={() => removeClassTeacher(ct.class_name)} />
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
 
           {myAssignedClasses.length === 0 ? (
             <div style={{ background: '#fff', padding: 24, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center', color: '#64748b', fontSize: 13, fontWeight: 600 }}>
