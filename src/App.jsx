@@ -384,7 +384,7 @@ export default function App() {
 
       <main style={{ padding: '4px 18px 20px' }}>
         {activeModule === 'students' ? (
-          <StudentsModule onBack={() => setActiveModule(null)} />
+          <StudentsModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'examinations' ? (
           <ExamsModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'attendance' ? (

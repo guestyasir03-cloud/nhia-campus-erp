@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   ChevronLeft, Users, UserPlus, Upload, ArrowUpCircle,
-  Search, Save, Hash, CheckSquare, Square
+  Save, Hash, CheckSquare, Square
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import YearResetPanel from '../components/YearResetPanel';
 
 const NEXT_CLASS_MAP = {
   S1: 'S2',
@@ -18,7 +19,7 @@ const NEXT_CLASS_MAP = {
   D3: 'ALUMNI'
 };
 
-export default function StudentsModule({ onBack }) {
+export default function StudentsModule({ onBack, user }) {
   const [view, setView] = useState('menu'); // menu | directory | add | import | promotion | rollno
   const [classes, setClasses] = useState([]);
   const [students, setStudents] = useState([]);
@@ -173,7 +174,7 @@ export default function StudentsModule({ onBack }) {
       .order('name');
     const list = data || [];
     setPromoList(list);
-    setSelectedAdms(new Set(list.map(s => s.adm_no))); // All checked by default
+    setSelectedAdms(new Set(list.map(s => s.adm_no)));
     setLoading(false);
   }
 
@@ -213,7 +214,7 @@ export default function StudentsModule({ onBack }) {
       .update({
         class_name: target,
         status: isAlumni ? 'alumni' : 'active',
-        roll_no: null // Reset roll no for new class
+        roll_no: null
       })
       .in('adm_no', admArray);
 
@@ -296,7 +297,7 @@ export default function StudentsModule({ onBack }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
             { id: 'directory', label: 'Student directory', icon: Users },
-            { id: 'promotion', label: 'Annual class promotion & Graduation', icon: ArrowUpCircle },
+            { id: 'promotion', label: 'Annual class promotion & Year Reset', icon: ArrowUpCircle },
             { id: 'rollno', label: 'Manage roll numbers', icon: Hash },
             { id: 'add', label: 'Add student', icon: UserPlus },
             { id: 'import', label: 'Bulk import (CSV)', icon: Upload }
@@ -329,7 +330,7 @@ export default function StudentsModule({ onBack }) {
       <Header
         title={
           view === 'directory' ? 'Student Directory' :
-          view === 'promotion' ? 'Class Promotion' :
+          view === 'promotion' ? 'Promotion & Year Reset' :
           view === 'rollno' ? 'Roll Numbers' :
           view === 'add' ? 'Add Student' : 'Bulk Import (CSV)'
         }
@@ -382,9 +383,9 @@ export default function StudentsModule({ onBack }) {
         </div>
       )}
 
-      {/* 2. ANNUAL CLASS PROMOTION & GRADUATION */}
+      {/* 2. ANNUAL CLASS PROMOTION & SELECTIVE YEAR RESET */}
       {view === 'promotion' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontSize: 12, color: '#475569' }}>
               Start promoting from the highest class first (e.g., <b>D3 → ALUMNI</b>, then <b>D2 → D3</b>, down to <b>S1 → S2</b>). Uncheck failed/detained students so they remain in the same class.
@@ -456,6 +457,9 @@ export default function StudentsModule({ onBack }) {
               </button>
             </>
           )}
+
+          {/* SELECTIVE ACADEMIC YEAR RESET (FINANCE PROTECTED) */}
+          <YearResetPanel user={user} />
         </div>
       )}
 
