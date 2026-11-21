@@ -2,9 +2,9 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { exportReportPDF, exportReportJPEG, exportReportCSV } from '../lib/exportReport';
 import {
-  CalendarClock, Plus, CheckCircle2, Trash2, BarChart3,
-  FileSpreadsheet, FileText, Image as ImageIcon, Search,
-  ChevronRight, ArrowLeft, Users, AlertTriangle
+  CalendarClock, CheckCircle2, Trash2, Search, ChevronRight,
+  ArrowLeft, Users, AlertTriangle, Clock, Edit3, Share2,
+  RefreshCw, CheckCheck, X
 } from 'lucide-react';
 
 function formatAMPM(timeStr) {
@@ -22,6 +22,12 @@ function getTodayStr() {
 
 function getNowTimeStr() {
   return new Date().toTimeString().slice(0, 5);
+}
+
+function isLeaveOverdue(d) {
+  if (d.status !== 'Active' || !d.exp_end_date) return false;
+  const exp = new Date(`${d.exp_end_date}T${d.exp_end_time || '23:59'}`);
+  return new Date() > exp;
 }
 
 function calculateLeaveHours(d) {
@@ -43,7 +49,7 @@ function formatDuration(totalHours) {
   return `${h} Hrs`;
 }
 
-export default function LeaveModule({ user }) {
+export default function LeaveModule({ user, onBack }) {
   const role = (user?.role || '').toLowerCase();
   const isAdmin = role.includes('admin') || role.includes('principal') || user?.isAdmin === true;
   const isStudent = role === 'student';
@@ -54,13 +60,20 @@ export default function LeaveModule({ user }) {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
-  // Active class drill-down
+  // Active tab filters
   const [selectedClassView, setSelectedClassView] = useState(null);
+  const [quickFilter, setQuickFilter] = useState('all'); // 'all' | 'overdue' | 'today' | 'upcoming'
+  const [globalSearch, setGlobalSearch] = useState('');
 
-  // Return modal state
+  // Modals: Return & Extend/Edit
   const [returnTarget, setReturnTarget] = useState(null);
   const [returnDate, setReturnDate] = useState(getTodayStr());
   const [returnTime, setReturnTime] = useState(getNowTimeStr());
+
+  const [editTarget, setEditTarget] = useState(null);
+  const [editExpDate, setEditExpDate] = useState('');
+  const [editExpTime, setEditExpTime] = useState('');
+  const [editReason, setEditReason] = useState('');
   const [saving, setSaving] = useState(false);
 
   // Add Leave Form State
@@ -89,7 +102,6 @@ export default function LeaveModule({ user }) {
     setLoading(true);
     const today = getTodayStr();
 
-    // Auto-activate Upcoming leaves whose start_date has arrived
     await supabase
       .from('student_leaves')
       .update({ status: 'Active' })
@@ -118,22 +130,56 @@ export default function LeaveModule({ user }) {
     setLoading(false);
   }
 
+  const todayStr = getTodayStr();
+
   const classList = useMemo(() => {
     return [...new Set(students.map(s => s.class_name).filter(Boolean))].sort();
   }, [students]);
 
   const activeLeaves = useMemo(() => leaves.filter(l => l.status === 'Active'), [leaves]);
   const upcomingLeaves = useMemo(() => leaves.filter(l => l.status === 'Upcoming'), [leaves]);
+  const overdueLeaves = useMemo(() => activeLeaves.filter(isLeaveOverdue), [activeLeaves]);
+  const returningTodayLeaves = useMemo(
+    () => activeLeaves.filter(l => l.exp_end_date === todayStr),
+    [activeLeaves, todayStr]
+  );
+
+  // Filtered list for Active tab (Zero-Lag)
+  const displayedActiveList = useMemo(() => {
+    let base = quickFilter === 'upcoming'
+      ? upcomingLeaves
+      : quickFilter === 'overdue'
+      ? overdueLeaves
+      : quickFilter === 'today'
+      ? returningTodayLeaves
+      : activeLeaves;
+
+    if (selectedClassView) {
+      base = base.filter(l => l.class_name === selectedClassView);
+    }
+
+    const q = globalSearch.trim().toLowerCase();
+    if (q) {
+      base = base.filter(l =>
+        (l.student_name || '').toLowerCase().includes(q) ||
+        String(l.adm_no || '').toLowerCase().includes(q) ||
+        (l.class_name || '').toLowerCase().includes(q)
+      );
+    }
+    return base;
+  }, [activeLeaves, upcomingLeaves, overdueLeaves, returningTodayLeaves, quickFilter, selectedClassView, globalSearch]);
 
   const classSummary = useMemo(() => {
     const map = {};
     activeLeaves.forEach(l => {
-      map[l.class_name] = (map[l.class_name] || 0) + 1;
+      if (!map[l.class_name]) map[l.class_name] = { total: 0, overdue: 0 };
+      map[l.class_name].total += 1;
+      if (isLeaveOverdue(l)) map[l.class_name].overdue += 1;
     });
     return Object.entries(map).sort((a, b) => a[0].localeCompare(b[0]));
   }, [activeLeaves]);
 
-  // Autocomplete suggestions (Zero-Lag)
+  // Autocomplete suggestions
   const studentSuggestions = useMemo(() => {
     if (!formClass || !studentQuery.trim() || selectedStudent) return [];
     const q = studentQuery.toLowerCase();
@@ -169,10 +215,20 @@ export default function LeaveModule({ user }) {
       studentMap[l.adm_no].totalHours += hrs;
       studentMap[l.adm_no].count += 1;
     });
-    const classRows = Object.entries(classMap).sort((a, b) => b[1] - a[1]);
-    const studentRows = Object.values(studentMap).sort((a, b) => b.totalHours - a.totalHours);
-    return { classRows, studentRows };
+    return {
+      classRows: Object.entries(classMap).sort((a, b) => b[1] - a[1]),
+      studentRows: Object.values(studentMap).sort((a, b) => b.totalHours - a.totalHours)
+    };
   }, [leaves]);
+
+  // Actions
+  function shareWhatsAppPass(item) {
+    const overdue = isLeaveOverdue(item);
+    const text = overdue
+      ? `⚠️ *LATE RETURN ALERT*\nStudent: *${item.student_name}* (Adm: ${item.adm_no})\nClass: ${item.class_name}\nLeave Started: ${item.start_date} ${formatAMPM(item.start_time)}\nExpected Return: ${item.exp_end_date} ${formatAMPM(item.exp_end_time)}\nStatus: *OVERDUE*\nPlease update campus office immediately.`
+      : `📋 *CAMPUS LEAVE PASS*\nStudent: *${item.student_name}* (Adm: ${item.adm_no})\nClass: ${item.class_name}\nType: ${item.leave_type}\nOut: ${item.start_date} ${formatAMPM(item.start_time)}\nExp. Return: ${item.exp_end_date || 'Not set'} ${formatAMPM(item.exp_end_time)}\nIssued By: ${item.issued_by}`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  }
 
   async function handleSaveLeave(e) {
     e.preventDefault();
@@ -183,19 +239,17 @@ export default function LeaveModule({ user }) {
     setSaving(true);
     setMsg('');
 
-    // Duplicate prevention
     if (!allClassMode) {
       const hasOpen = leaves.some(
         l => String(l.adm_no) === String(selectedStudent.adm_no) && (l.status === 'Active' || l.status === 'Upcoming')
       );
       if (hasOpen) {
         setSaving(false);
-        return alert(`${selectedStudent.name} already has an Active or Upcoming leave! Please mark them Returned first.`);
+        return alert(`${selectedStudent.name} already has an Active or Upcoming leave!`);
       }
     }
 
-    const today = getTodayStr();
-    const status = startDate > today ? 'Upcoming' : 'Active';
+    const status = startDate > todayStr ? 'Upcoming' : 'Active';
     const base = {
       class_name: formClass,
       leave_type: leaveType,
@@ -220,19 +274,36 @@ export default function LeaveModule({ user }) {
       return alert('No students found in this class.');
     }
 
-    const { error } = await supabase.from('student_leaves').insert(payload);
+    const { data, error } = await supabase.from('student_leaves').insert(payload).select();
     setSaving(false);
 
     if (error) {
       setMsg('❌ Error: ' + error.message);
     } else {
+      setLeaves(prev => [...(data || []), ...prev]);
       setMsg(`✅ Leave saved for ${allClassMode ? `${payload.length} students in ${formClass}` : selectedStudent.name}!`);
       setStudentQuery('');
       setSelectedStudent(null);
       setReason('');
       setAllClassMode(false);
-      await loadInitialData();
       setTab('active');
+    }
+  }
+
+  async function handleQuickReturn(item) {
+    const rDate = getTodayStr();
+    const rTime = getNowTimeStr();
+    // Optimistic update (Zero-Lag)
+    setLeaves(prev => prev.map(l => l.id === item.id ? { ...l, status: 'Returned', return_date: rDate, return_time: rTime, returned_by: user?.name || 'Staff' } : l));
+    const { error } = await supabase
+      .from('student_leaves')
+      .update({ status: 'Returned', return_date: rDate, return_time: rTime, returned_by: user?.name || 'Staff' })
+      .eq('id', item.id);
+    if (error) {
+      alert('Update failed: ' + error.message);
+      loadInitialData();
+    } else {
+      setMsg(`✅ ${item.student_name} marked as Returned!`);
     }
   }
 
@@ -241,35 +312,64 @@ export default function LeaveModule({ user }) {
     setSaving(true);
     const { error } = await supabase
       .from('student_leaves')
-      .update({
-        status: 'Returned',
-        return_date: returnDate,
-        return_time: returnTime,
-        returned_by: user?.name || 'Staff'
-      })
+      .update({ status: 'Returned', return_date: returnDate, return_time: returnTime, returned_by: user?.name || 'Staff' })
       .eq('id', returnTarget.id);
-
     setSaving(false);
     if (error) {
       alert('Error updating: ' + error.message);
     } else {
+      setLeaves(prev => prev.map(l => l.id === returnTarget.id ? { ...l, status: 'Returned', return_date: returnDate, return_time: returnTime, returned_by: user?.name || 'Staff' } : l));
+      setMsg(`✅ ${returnTarget.student_name} marked as Returned!`);
       setReturnTarget(null);
-      await loadInitialData();
+    }
+  }
+
+  async function handleBulkReturnClass(className) {
+    const targets = activeLeaves.filter(l => l.class_name === className);
+    if (targets.length === 0) return;
+    if (!window.confirm(`Mark all ${targets.length} active students in ${className} as Returned now?`)) return;
+    const ids = targets.map(t => t.id);
+    const rDate = getTodayStr();
+    const rTime = getNowTimeStr();
+    const { error } = await supabase
+      .from('student_leaves')
+      .update({ status: 'Returned', return_date: rDate, return_time: rTime, returned_by: user?.name || 'Staff' })
+      .in('id', ids);
+    if (!error) {
+      setLeaves(prev => prev.map(l => ids.includes(l.id) ? { ...l, status: 'Returned', return_date: rDate, return_time: rTime, returned_by: user?.name || 'Staff' } : l));
+      setSelectedClassView(null);
+      setMsg(`✅ All ${targets.length} students in ${className} marked as Returned!`);
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!editTarget) return;
+    setSaving(true);
+    const { error } = await supabase
+      .from('student_leaves')
+      .update({ exp_end_date: editExpDate || null, exp_end_time: editExpTime || '', reason: editReason.trim() })
+      .eq('id', editTarget.id);
+    setSaving(false);
+    if (!error) {
+      setLeaves(prev => prev.map(l => l.id === editTarget.id ? { ...l, exp_end_date: editExpDate || null, exp_end_time: editExpTime || '', reason: editReason.trim() } : l));
+      setMsg(`✅ Leave updated for ${editTarget.student_name}!`);
+      setEditTarget(null);
     }
   }
 
   async function handleDeleteLeave(id) {
     if (!isAdmin) return;
     if (!window.confirm('Permanently delete this leave record?')) return;
-    const { error } = await supabase.from('student_leaves').delete().eq('id', id);
-    if (!error) setLeaves(prev => prev.filter(l => l.id !== id));
+    setLeaves(prev => prev.filter(l => l.id !== id));
+    await supabase.from('student_leaves').delete().eq('id', id);
   }
 
   function handleExportCSV() {
-    const headers = ['Adm No', 'Student Name', 'Class', 'Type', 'Reason', 'Start Date', 'Start Time', 'Return Date', 'Return Time', 'Duration', 'Status', 'Issued By', 'Returned By'];
+    const headers = ['Adm No', 'Student Name', 'Class', 'Type', 'Reason', 'Start Date', 'Start Time', 'Exp Return', 'Actual Return', 'Duration', 'Status', 'Issued By', 'Returned By'];
     const rows = filteredReports.map(l => [
       l.adm_no, l.student_name, l.class_name, l.leave_type, l.reason || '-',
-      l.start_date, formatAMPM(l.start_time) || '-', l.return_date || '-', formatAMPM(l.return_time) || '-',
+      l.start_date, formatAMPM(l.start_time) || '-', l.exp_end_date || '-',
+      l.return_date ? `${l.return_date} ${formatAMPM(l.return_time)}` : '-',
       formatDuration(calculateLeaveHours(l)), l.status, l.issued_by, l.returned_by || '-'
     ]);
     exportReportCSV(`Leave_Report_${filterClass}`, headers, rows);
@@ -279,6 +379,11 @@ export default function LeaveModule({ user }) {
   if (isStudent) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {onBack && (
+          <button onClick={onBack} style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 9, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+            <ArrowLeft size={15} /> Back
+          </button>
+        )}
         <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: '#0f172a', marginBottom: 10 }}>My Leave History</div>
           {loading ? (
@@ -287,13 +392,15 @@ export default function LeaveModule({ user }) {
             <div style={{ color: '#94a3b8', fontSize: 13 }}>No leave records found.</div>
           ) : (
             leaves.map(l => (
-              <div key={l.id} style={{ padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', marginBottom: 8, borderLeft: `4px solid ${l.status === 'Active' ? '#dc2626' : l.status === 'Upcoming' ? '#f59e0b' : '#16a34a'}` }}>
+              <div key={l.id} style={{ padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', marginBottom: 8, borderLeft: `4px solid ${isLeaveOverdue(l) ? '#dc2626' : l.status === 'Active' ? '#2e44d2' : '#16a34a'}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, fontSize: 13 }}>
                   <span>{l.leave_type}</span>
-                  <span style={{ color: l.status === 'Active' ? '#dc2626' : '#16a34a' }}>{l.status}</span>
+                  <span style={{ color: isLeaveOverdue(l) ? '#dc2626' : l.status === 'Active' ? '#2e44d2' : '#16a34a' }}>
+                    {isLeaveOverdue(l) ? 'OVERDUE' : l.status}
+                  </span>
                 </div>
                 <div style={{ fontSize: 12, color: '#475569', marginTop: 4 }}>
-                  From: {l.start_date} {l.start_time ? `@ ${formatAMPM(l.start_time)}` : ''}
+                  Out: {l.start_date} {l.start_time ? `@ ${formatAMPM(l.start_time)}` : ''}
                   {l.return_date ? ` • Returned: ${l.return_date} @ ${formatAMPM(l.return_time)}` : ''}
                 </div>
                 <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
@@ -308,12 +415,52 @@ export default function LeaveModule({ user }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* TOP TABS */}
-      <div style={{ display: 'flex', gap: 6, background: '#e2e8f0', padding: 4, borderRadius: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* HEADER */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {onBack && (
+            <button onClick={onBack} style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #e2e8f0', background: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+              <ArrowLeft size={17} color="#0f172a" />
+            </button>
+          )}
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: '#0f172a' }}>Leave Portal</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>Live Campus Outpass & Tracking</div>
+          </div>
+        </div>
+        <button onClick={loadInitialData} title="Refresh" style={{ width: 34, height: 34, borderRadius: 10, border: '1px solid #e2e8f0', background: '#fff', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+          <RefreshCw size={15} color="#475569" />
+        </button>
+      </div>
+
+      {/* LIVE KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
         {[
-          { id: 'active', label: `Active (${activeLeaves.length})` },
-          { id: 'add', label: '+ Add Leave' },
+          { id: 'all', label: 'Active Out', val: activeLeaves.length, bg: '#eff6ff', col: '#1d4ed8', border: '#bfdbfe' },
+          { id: 'overdue', label: 'Overdue', val: overdueLeaves.length, bg: '#fef2f2', col: '#dc2626', border: '#fecaca' },
+          { id: 'today', label: 'Due Today', val: returningTodayLeaves.length, bg: '#f0fdf4', col: '#15803d', border: '#bbf7d0' },
+          { id: 'upcoming', label: 'Upcoming', val: upcomingLeaves.length, bg: '#fffbeb', col: '#d97706', border: '#fde68a' }
+        ].map(k => (
+          <div
+            key={k.id}
+            onClick={() => { setTab('active'); setQuickFilter(k.id); setSelectedClassView(null); }}
+            style={{
+              background: k.bg, border: `1.5px solid ${quickFilter === k.id && tab === 'active' ? k.col : k.border}`,
+              borderRadius: 12, padding: '8px 6px', textAlign: 'center', cursor: 'pointer'
+            }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 900, color: k.col }}>{k.val}</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: k.col }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* MAIN TABS */}
+      <div style={{ display: 'flex', gap: 5, background: '#e2e8f0', padding: 4, borderRadius: 11 }}>
+        {[
+          { id: 'active', label: 'Live Status' },
+          { id: 'add', label: '+ New Leave' },
           { id: 'reports', label: 'Reports' },
           { id: 'insights', label: 'Insights' }
         ].map(t => (
@@ -321,7 +468,7 @@ export default function LeaveModule({ user }) {
             key={t.id}
             onClick={() => { setTab(t.id); setSelectedClassView(null); setMsg(''); }}
             style={{
-              flex: 1, padding: '9px 6px', borderRadius: 9, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+              flex: 1, padding: '8px 4px', borderRadius: 8, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
               background: tab === t.id ? '#2e44d2' : 'transparent',
               color: tab === t.id ? '#fff' : '#475569'
             }}
@@ -332,79 +479,52 @@ export default function LeaveModule({ user }) {
       </div>
 
       {msg && (
-        <div style={{ padding: '10px 12px', borderRadius: 10, background: msg.startsWith('✅') ? '#f0fdf4' : '#fef2f2', color: msg.startsWith('✅') ? '#15803d' : '#dc2626', fontSize: 13, fontWeight: 600 }}>
-          {msg}
+        <div style={{ padding: '9px 12px', borderRadius: 10, background: msg.startsWith('✅') ? '#f0fdf4' : '#fef2f2', color: msg.startsWith('✅') ? '#15803d' : '#dc2626', fontSize: 12, fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>{msg}</span>
+          <X size={14} style={{ cursor: 'pointer' }} onClick={() => setMsg('')} />
         </div>
       )}
 
-      {/* TAB 1: ACTIVE LEAVES */}
+      {/* TAB 1: LIVE STATUS */}
       {tab === 'active' && (
-        selectedClassView ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <button
-              onClick={() => setSelectedClassView(null)}
-              style={{ alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 6, padding: '7px 12px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-            >
-              <ArrowLeft size={15} /> Back to Summary ({selectedClassView})
-            </button>
-
-            {activeLeaves.filter(l => l.class_name === selectedClassView).map(item => (
-              <div key={item.id} style={{ background: '#fff', padding: 14, borderRadius: 12, border: '1px solid #e2e8f0', borderLeft: '4px solid #dc2626' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{item.student_name}</div>
-                    <div style={{ fontSize: 11, color: '#64748b' }}>Adm: {item.adm_no} • {item.class_name}</div>
-                  </div>
-                  <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: '#fef2f2', color: '#dc2626' }}>
-                    {item.leave_type}
-                  </span>
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginTop: 8 }}>
-                  Out: <b>{item.start_date}</b> {item.start_time ? `@ ${formatAMPM(item.start_time)}` : ''} • Duration: <b>{formatDuration(calculateLeaveHours(item))}</b>
-                </div>
-                {item.reason && <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Reason: {item.reason}</div>}
-                <div style={{ fontSize: 11, color: '#2e44d2', marginTop: 4 }}>Issued By: {item.issued_by}</div>
-
-                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                  <button
-                    onClick={() => { setReturnTarget(item); setReturnDate(getTodayStr()); setReturnTime(getNowTimeStr()); }}
-                    style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer' }}
-                  >
-                    <CheckCircle2 size={15} /> Mark as Returned
-                  </button>
-                  {isAdmin && (
-                    <button
-                      onClick={() => handleDeleteLeave(item.id)}
-                      style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {/* INSTANT GLOBAL SEARCH */}
+          <div style={{ position: 'relative' }}>
+            <Search size={15} color="#94a3b8" style={{ position: 'absolute', left: 11, top: 11 }} />
+            <input
+              value={globalSearch}
+              onChange={e => setGlobalSearch(e.target.value)}
+              placeholder="Instant search student name, Adm No, or class..."
+              style={{ width: '100%', padding: '9px 12px 9px 34px', borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontSize: 13, boxSizing: 'border-box' }}
+            />
           </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+          {/* CLASS SUMMARY OR STUDENT CARDS */}
+          {!selectedClassView && quickFilter === 'all' && !globalSearch.trim() ? (
             <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                <CalendarClock size={16} color="#dc2626" /> Current Active Leaves (Class-wise)
+                <CalendarClock size={16} color="#2e44d2" /> Active Leaves by Class
               </div>
               {loading ? (
                 <div style={{ textAlign: 'center', padding: 16, color: '#64748b', fontSize: 13 }}>Loading...</div>
               ) : classSummary.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>No students currently on leave.</div>
+                <div style={{ textAlign: 'center', padding: 20, color: '#94a3b8', fontSize: 13 }}>All students are on campus!</div>
               ) : (
-                classSummary.map(([cls, count]) => (
+                classSummary.map(([cls, info]) => (
                   <div
                     key={cls}
                     onClick={() => setSelectedClassView(cls)}
-                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 10px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                    style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 8px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
                   >
                     <span style={{ fontWeight: 700, fontSize: 14, color: '#0f172a' }}>{cls}</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ background: '#dc2626', color: '#fff', fontWeight: 800, fontSize: 12, padding: '3px 10px', borderRadius: 20 }}>
-                        {count}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {info.overdue > 0 && (
+                        <span style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', fontWeight: 800, fontSize: 11, padding: '2px 8px', borderRadius: 20 }}>
+                          {info.overdue} Late
+                        </span>
+                      )}
+                      <span style={{ background: '#2e44d2', color: '#fff', fontWeight: 800, fontSize: 12, padding: '3px 10px', borderRadius: 20 }}>
+                        {info.total}
                       </span>
                       <ChevronRight size={16} color="#94a3b8" />
                     </div>
@@ -412,28 +532,110 @@ export default function LeaveModule({ user }) {
                 ))
               )}
             </div>
-
-            {upcomingLeaves.length > 0 && (
-              <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#d97706', marginBottom: 8 }}>
-                  Upcoming Scheduled Leaves ({upcomingLeaves.length})
-                </div>
-                {upcomingLeaves.map(u => (
-                  <div key={u.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontSize: 12 }}>
-                    <div>
-                      <b>{u.student_name}</b> ({u.class_name}) • Starts: {u.start_date}
-                    </div>
-                    {isAdmin && (
-                      <button onClick={() => handleDeleteLeave(u.id)} style={{ border: 'none', background: 'transparent', color: '#dc2626', cursor: 'pointer' }}>
-                        <Trash2 size={14} />
-                      </button>
-                    )}
-                  </div>
-                ))}
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <button
+                  onClick={() => { setSelectedClassView(null); setQuickFilter('all'); setGlobalSearch(''); }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                >
+                  <ArrowLeft size={14} /> {selectedClassView ? `All Classes (${selectedClassView})` : 'Back to Summary'}
+                </button>
+                {selectedClassView && displayedActiveList.length > 1 && (
+                  <button
+                    onClick={() => handleBulkReturnClass(selectedClassView)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 10px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    <CheckCheck size={14} /> Return All ({displayedActiveList.length})
+                  </button>
+                )}
               </div>
-            )}
-          </div>
-        )
+
+              {displayedActiveList.length === 0 ? (
+                <div style={{ background: '#fff', padding: 20, borderRadius: 12, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>No matching leave records.</div>
+              ) : (
+                displayedActiveList.map(item => {
+                  const overdue = isLeaveOverdue(item);
+                  return (
+                    <div key={item.id} style={{ background: '#fff', padding: 14, borderRadius: 12, border: '1px solid #e2e8f0', borderLeft: `4px solid ${overdue ? '#dc2626' : item.status === 'Upcoming' ? '#d97706' : '#2e44d2'}` }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6 }}>
+                        <div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{item.student_name}</div>
+                          <div style={{ fontSize: 11, color: '#64748b' }}>Adm: {item.adm_no} • {item.class_name}</div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {overdue && (
+                            <span style={{ fontSize: 10, fontWeight: 800, padding: '3px 7px', borderRadius: 6, background: '#dc2626', color: '#fff' }}>
+                              OVERDUE
+                            </span>
+                          )}
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 6, background: '#f1f5f9', color: '#334155' }}>
+                            {item.leave_type}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ fontSize: 12, color: '#475569', marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                        <span>Out: <b>{item.start_date}</b> {item.start_time ? `@ ${formatAMPM(item.start_time)}` : ''}</span>
+                        {item.exp_end_date && (
+                          <span style={{ color: overdue ? '#dc2626' : '#15803d' }}>
+                            Exp: <b>{item.exp_end_date}</b> {item.exp_end_time ? `@ ${formatAMPM(item.exp_end_time)}` : ''}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 3 }}>
+                        Duration: <b>{formatDuration(calculateLeaveHours(item))}</b> • By: {item.issued_by} {item.reason ? `• "${item.reason}"` : ''}
+                      </div>
+
+                      <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                        {item.status === 'Active' && (
+                          <>
+                            <button
+                              onClick={() => handleQuickReturn(item)}
+                              style={{ flex: 1, padding: '8px 6px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, cursor: 'pointer' }}
+                            >
+                              <CheckCircle2 size={14} /> Returned Now
+                            </button>
+                            <button
+                              onClick={() => { setReturnTarget(item); setReturnDate(getTodayStr()); setReturnTime(getNowTimeStr()); }}
+                              title="Custom Return Time"
+                              style={{ padding: '8px 9px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#334155', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3, cursor: 'pointer' }}
+                            >
+                              <Clock size={13} /> Time
+                            </button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => { setEditTarget(item); setEditExpDate(item.exp_end_date || ''); setEditExpTime(item.exp_end_time || ''); setEditReason(item.reason || ''); }}
+                          title="Extend / Edit Leave"
+                          style={{ padding: '8px 9px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', color: '#2e44d2', cursor: 'pointer' }}
+                        >
+                          <Edit3 size={14} />
+                        </button>
+                        <button
+                          onClick={() => shareWhatsAppPass(item)}
+                          title="Share WhatsApp Pass"
+                          style={{ padding: '8px 9px', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#15803d', cursor: 'pointer' }}
+                        >
+                          <Share2 size={14} />
+                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleDeleteLeave(item.id)}
+                            title="Delete"
+                            style={{ padding: '8px 9px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer' }}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {/* TAB 2: ADD NEW LEAVE */}
@@ -464,11 +666,7 @@ export default function LeaveModule({ user }) {
               {studentSuggestions.length > 0 && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #cbd5e1', borderRadius: 9, zIndex: 20, maxHeight: 180, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
                   {studentSuggestions.map(s => (
-                    <div
-                      key={s.adm_no}
-                      onClick={() => { setSelectedStudent(s); setStudentQuery(s.name); }}
-                      style={{ padding: '9px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', fontSize: 13 }}
-                    >
+                    <div key={s.adm_no} onClick={() => { setSelectedStudent(s); setStudentQuery(s.name); }} style={{ padding: '9px 12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', fontSize: 13 }}>
                       <b>{s.name}</b> <span style={{ color: '#64748b' }}>(Adm: {s.adm_no})</span>
                     </div>
                   ))}
@@ -514,7 +712,7 @@ export default function LeaveModule({ user }) {
         </form>
       )}
 
-      {/* TAB 3: ADVANCED REPORTS */}
+      {/* TAB 3: REPORTS */}
       {tab === 'reports' && (
         <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
@@ -559,7 +757,9 @@ export default function LeaveModule({ user }) {
                       <td style={{ padding: 7, fontWeight: 600 }}>{r.student_name}</td>
                       <td style={{ padding: 7 }}>{r.class_name}</td>
                       <td style={{ padding: 7 }}>{formatDuration(calculateLeaveHours(r))}</td>
-                      <td style={{ padding: 7, fontWeight: 700, color: r.status === 'Active' ? '#dc2626' : '#16a34a' }}>{r.status}</td>
+                      <td style={{ padding: 7, fontWeight: 700, color: isLeaveOverdue(r) ? '#dc2626' : r.status === 'Active' ? '#2e44d2' : '#16a34a' }}>
+                        {isLeaveOverdue(r) ? 'Overdue' : r.status}
+                      </td>
                     </tr>
                   ))
                 )}
@@ -569,7 +769,7 @@ export default function LeaveModule({ user }) {
         </div>
       )}
 
-      {/* TAB 4: LEAVE INSIGHTS */}
+      {/* TAB 4: INSIGHTS */}
       {tab === 'insights' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
@@ -578,7 +778,7 @@ export default function LeaveModule({ user }) {
             </div>
             {insights.studentRows.slice(0, 5).map((s, idx) => (
               <div key={s.adm_no} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
-                <span>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🔹'} <b>{s.name}</b> <small style={{ color: '#64748b' }}>({s.class_name})</small></span>
+                <span>{idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '🔹'} <b>{s.name}</b> <small style={{ color: '#64748b' }}>({s.class_name} • {s.count}x)</small></span>
                 <span style={{ fontWeight: 800, color: '#dc2626' }}>{formatDuration(s.totalHours)}</span>
               </div>
             ))}
@@ -596,11 +796,11 @@ export default function LeaveModule({ user }) {
         </div>
       )}
 
-      {/* RETURN MODAL */}
+      {/* CUSTOM RETURN MODAL */}
       {returnTarget && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'grid', placeItems: 'center', zIndex: 1000, padding: 16 }}>
           <div style={{ background: '#fff', padding: 18, borderRadius: 14, width: '100%', maxWidth: 340 }}>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#16a34a', marginBottom: 6 }}>Mark as Returned</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#16a34a', marginBottom: 6 }}>Custom Return Time</div>
             <div style={{ fontSize: 13, color: '#475569', marginBottom: 12 }}><b>{returnTarget.student_name}</b> ({returnTarget.class_name})</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
               <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1' }} />
@@ -609,7 +809,31 @@ export default function LeaveModule({ user }) {
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setReturnTarget(null)} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
               <button disabled={saving} onClick={handleConfirmReturn} style={{ flex: 1, padding: 10, borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                {saving ? 'Saving...' : 'Confirm Return'}
+                {saving ? 'Saving...' : 'Confirm'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EXTEND / EDIT LEAVE MODAL */}
+      {editTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'grid', placeItems: 'center', zIndex: 1000, padding: 16 }}>
+          <div style={{ background: '#fff', padding: 18, borderRadius: 14, width: '100%', maxWidth: 340 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: '#2e44d2', marginBottom: 6 }}>Extend / Edit Leave</div>
+            <div style={{ fontSize: 13, color: '#475569', marginBottom: 12 }}><b>{editTarget.student_name}</b> ({editTarget.class_name})</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>New Expected Return Date</label>
+              <input type="date" value={editExpDate} onChange={e => setEditExpDate(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1' }} />
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>New Expected Return Time</label>
+              <input type="time" value={editExpTime} onChange={e => setEditExpTime(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1' }} />
+              <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b' }}>Reason</label>
+              <input type="text" value={editReason} onChange={e => setEditReason(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1' }} />
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => setEditTarget(null)} style={{ flex: 1, padding: 10, borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+              <button disabled={saving} onClick={handleSaveEdit} style={{ flex: 1, padding: 10, borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
           </div>
