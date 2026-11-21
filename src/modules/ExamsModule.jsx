@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { FileText, Award, Download, ChevronLeft, Save, Search } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
 import { supabase } from '../lib/supabase';
 import { exportReportPDF, exportReportJPEG } from '../lib/exportReport';
 
@@ -100,13 +99,13 @@ export default function ExamsModule({ onBack, user }) {
       setActiveConfig(found);
 
       // Pick first enabled mode automatically
-      const defaultMode = found.has_w1_w4
-        ? 'w1_w4'
-        : found.has_midterm
-        ? 'midterm'
-        : found.has_hifz
-        ? 'hifz'
-        : 'w1_w4';
+      const defaultMode = found.has_w1_w4 !== false
+  ? 'w1_w4'
+  : found.has_midterm
+  ? 'midterm'
+  : found.has_hifz
+  ? 'hifz'
+  : 'w1_w4';
 
       setExamMode(defaultMode);
       loadForEntry(found.class_name, found.subject_name, defaultMode);
@@ -152,11 +151,7 @@ export default function ExamsModule({ onBack, user }) {
     setLoading(false);
   }
 
-  const isSingleMarkMode =
-    examMode === 'midterm' ||
-    examMode === 'hifz' ||
-    subject.toUpperCase().includes('HIFZ') ||
-    subject.toUpperCase().includes('MIDTERM');
+  const isSingleMarkMode = examMode === 'midterm' || examMode === 'hifz'; 
 
   function updateMark(admNo, field, value, max) {
     if (value !== '' && Number(value) > max) {
