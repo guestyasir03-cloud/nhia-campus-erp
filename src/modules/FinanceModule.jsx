@@ -65,7 +65,7 @@ export default function FinanceModule({ onBack, user }) {
     setLoading(true);
     const [{ data: st }, { data: recs }] = await Promise.all([
       supabase.from('students').select('adm_no, name, class_name, monthly_donation, last_paid_month').eq('adm_no', admNo).maybeSingle(),
-      supabase.from('donation_receipts').select('*').eq('adm_no', admNo).order('created_at', { ascending: false }).limit(12)
+      supabase.from('donation_receipts').select('*').gt('amount', 0).eq('adm_no', admNo).order('created_at', { ascending: false }).limit(12)
     ]);
 
     const pendingMo = getPendingMonths(st?.last_paid_month, currentYM);
@@ -171,7 +171,7 @@ export default function FinanceModule({ onBack, user }) {
     setLoading(true);
     const [{ data: stData }, { data: recData }] = await Promise.all([
       supabase.from('students').select('adm_no, class_name, monthly_donation, last_paid_month').neq('class_name', 'ALUMNI'),
-      supabase.from('donation_receipts').select('class_name, amount')
+      supabase.from('donation_receipts').select('class_name, amount').gt('amount', 0)
     ]);
 
     const clsMap = {};
