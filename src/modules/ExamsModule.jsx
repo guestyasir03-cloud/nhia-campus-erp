@@ -277,7 +277,7 @@ export default function ExamsModule({ onBack, user }) {
       supabase.from('marks').select('*').eq('adm_no', targetAdm),
       supabase.from('students').select('adm_no, class_name'),
       supabase.from('marks').select('adm_no, final_mark'),
-      supabase.from('attendance').select('status').eq('adm_no', targetAdm)
+      supabase.from('spot_attendance').select('status').eq('adm_no', targetAdm)
     ]);
 
     if (!st) {
@@ -287,14 +287,14 @@ export default function ExamsModule({ onBack, user }) {
 
     const { data: assignedSubs } = await supabase
       .from('subject_assignments')
-      .select('subject')
+      .select('subject_name')
       .eq('class_name', st.class_name);
 
     setLoading(false);
 
     // Build complete subject list for this class (assigned + any existing marks)
     const subSet = new Set();
-    (assignedSubs || []).forEach(a => { if (a.subject) subSet.add(a.subject.trim()); });
+    (assignedSubs || []).forEach(a => { if (a.subject_name) subSet.add(a.subject_name.trim()); });
     (mk || []).forEach(m => { if (m.subject) subSet.add(m.subject.trim()); });
     const allSubjects = Array.from(subSet);
 
@@ -658,8 +658,9 @@ const handleEnterDown = (e) => {
 
           {gradeCard && (
             <>
-              <div id="nhia-grade-card" style={{ background: '#fff', padding: '18px 20px', fontFamily: 'Times New Roman, serif', color: '#000', border: '1px solid #cbd5e1' }}>
-                <div style={{ textAlign: 'center', borderBottom: '1.5px solid #000', paddingBottom: 10, marginBottom: 12 }}>
+              <div id="nhia-grade-card" style={{ background: '#fff', padding: '20px 22px', fontFamily: 'Times New Roman, serif', color: '#000', border: '1.5px solid #000' }}>
+                <div style={{ position: 'relative', textAlign: 'center', borderBottom: '1.5px solid #000', paddingBottom: 12, marginBottom: 12, minHeight: 58 }}>
+                  <img src="/logo.jpg" alt="NHIA Logo" style={{ position: 'absolute', left: 10, top: 0, width: 52, height: 52, objectFit: 'contain' }} />
                   <h3 style={{ margin: 0, fontSize: 19, fontWeight: 700 }}>Noorul Hidaya Islamic Academy, Pattambi</h3>
                   <div style={{ fontSize: 12, marginTop: 3 }}>(Affiliated to: Darul Huda Islamic University)</div>
                   <div style={{ fontSize: 11, marginTop: 2 }}>Kondoorkkara, Aman nagar, 679313</div>
@@ -668,7 +669,7 @@ const handleEnterDown = (e) => {
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
                   <tbody>
                     <tr>
-                      <td style={{ border: '1px solid #000', padding: '6px 8px', width: '32%' }}><b>Academic Year:</b> 2026-27</td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', width: '32%', whiteSpace: 'nowrap' }}><b>Academic Year:</b> 2026-27</td>
                       <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center', fontWeight: 700, fontSize: 14 }}>CCE Grade Card</td>
                       <td style={{ border: '1px solid #000', padding: '6px 8px', width: '30%' }}><b>Term:</b> Half Year</td>
                     </tr>
