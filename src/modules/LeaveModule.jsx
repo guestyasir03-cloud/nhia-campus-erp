@@ -82,7 +82,90 @@ export default function LeaveModule({ user, onBack }) {
   const [formClass, setFormClass] = useState('');
   const [studentQuery, setStudentQuery] = useState('');
   const [selectedStudent, setSelectedStudent] = useState(null);
-  const [leaveType, setLeaveType] = useState('Home/Casual');
+  const DEFAULT_LEAVE_TYPES = ['Home / Casual Leave', 'Medical Leave', 'Official / Program', 'Other'];
+  const canManageLeaveTypes = ['admin', 'coordinator'].includes(user?.role);
+  const [leaveTypes, setLeaveTypes] = useState(DEFAULT_LEAVE_TYPES);
+  const [leaveType, setLeaveType] = useState('Home / Casual Leave');
+  const [showManageTypes, setShowManageTypes] = useState(false);
+  const [newTypeName, setNewTypeName] = useState('');
+  const [editingTypeIdx, setEditingTypeIdx] = useState(null);
+  const [editingTypeVal, setEditingTypeVal] = useState('');
+  const [savingTypes, setSavingTypes] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'leave_types')
+        .maybeSingle();
+      if (data?.value) {
+        try {
+          const parsed = JSON.parse(data.value);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setLeaveTypes(parsed);
+            setLeaveType(prev => (parsed.includes(prev) ? prev : parsed[0]));
+          }
+        } catch {}
+      }
+    })();
+  }, []);
+
+  async function persistLeaveTypes(nextList, renamedFrom, renamedTo) {
+    setSavingTypes(true);
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'leave_types', value: JSON.stringify(nextList) }, { onConflict: 'key' });
+    setSavingTypes(false);
+    if (error) {
+      setMsg('Error saving leave types: ' + error.message);
+      return false;
+    }
+    setLeaveTypes(nextList);
+    if (renamedFrom && leaveType === renamedFrom) {
+      setLeaveType(renamedTo || nextList[0] || '');
+    } else if (!nextList.includes(leaveType)) {
+      setLeaveType(nextList[0] || '');
+    }
+    setMsg('Leave types updated!');
+    return true;
+  }
+
+  async function handleAddLeaveType() {
+    const trimmed = newTypeName.trim();
+    if (!trimmed) return;
+    if (leaveTypes.some(t => t.toLowerCase() === trimmed.toLowerCase())) {
+      setMsg('Leave type already exists.');
+      return;
+    }
+    if (await persistLeaveTypes([...leaveTypes, trimmed])) setNewTypeName('');
+  }
+
+  async function handleUpdateLeaveType(idx) {
+    const trimmed = editingTypeVal.trim();
+    if (!trimmed) return;
+    const oldName = leaveTypes[idx];
+    if (leaveTypes.some((t, i) => i !== idx && t.toLowerCase() === trimmed.toLowerCase())) {
+      setMsg('Leave type already exists.');
+      return;
+    }
+    const next = leaveTypes.map((t, i) => (i === idx ? trimmed : t));
+    if (await persistLeaveTypes(next, oldName, trimmed)) {
+      setEditingTypeIdx(null);
+      setEditingTypeVal('');
+    }
+  }
+
+  async function handleDeleteLeaveType(idx) {
+    if (leaveTypes.length <= 1) {
+      setMsg('At least one leave type is required.');
+      return;
+    }
+    const target = leaveTypes[idx];
+    if (!window.confirm(`Delete leave type "${target}"?`)) return;
+    const next = leaveTypes.filter((_, i) => i !== idx);
+    await persistLeaveTypes(next, target, next[0]);
+  }
   const [reason, setReason] = useState('');
   const [startDate, setStartDate] = useState(getTodayStr());
   const [startTime, setStartTime] = useState(getNowTimeStr());
@@ -834,12 +917,69 @@ export default function LeaveModule({ user, onBack }) {
             </div>
           )}
 
-          <select value={leaveType} onChange={e => setLeaveType(e.target.value)} required style={{ padding: 10, borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 13 }}>
-            <option value="Home/Casual">Home / Casual Leave</option>
-            <option value="Medical">Medical Leave</option>
-            <option value="Official/Program">Official / Program</option>
-            <option value="Other">Other</option>
-          </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {canManageLeaveTypes && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Leave Type</label>
+                <button
+                  type="button"
+                  onClick={() => { setShowManageTypes(v => !v); setEditingTypeIdx(null); }}
+                  style={{ background: 'none', border: 'none', color: '#2e44d2', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                >
+                  {showManageTypes ? 'Done' : '+ Manage Types'}
+                </button>
+              </div>
+            )}
+            <select value={leaveType} onChange={e => setLeaveType(e.target.value)} required style={{ width: '100%', padding: 10, borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff' }}>
+              {leaveTypes.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+
+            {canManageLeaveTypes && showManageTypes && (
+              <div style={{ padding: 10, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    type="text"
+                    value={newTypeName}
+                    onChange={e => setNewTypeName(e.target.value)}
+                    placeholder="New leave type..."
+                    style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddLeaveType}
+                    disabled={savingTypes || !newTypeName.trim()}
+                    style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    Add
+                  </button>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                  {leaveTypes.map((t, idx) => (
+                    <div key={t + idx} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', padding: '6px 8px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                      {editingTypeIdx === idx ? (
+                        <>
+                          <input
+                            type="text"
+                            value={editingTypeVal}
+                            onChange={e => setEditingTypeVal(e.target.value)}
+                            style={{ flex: 1, padding: '4px 8px', borderRadius: 6, border: '1px solid #93c5fd', fontSize: 12 }}
+                          />
+                          <button type="button" onClick={() => handleUpdateLeaveType(idx)} disabled={savingTypes} style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#16a34a', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                          <button type="button" onClick={() => setEditingTypeIdx(null)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#475569', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                        </>
+                      ) : (
+                        <>
+                          <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{t}</span>
+                          <button type="button" onClick={() => { setEditingTypeIdx(idx); setEditingTypeVal(t); }} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#2e44d2', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Edit</button>
+                          <button type="button" onClick={() => handleDeleteLeaveType(idx)} disabled={savingTypes} style={{ padding: '4px 7px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Delete</button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           <input type="text" value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (Optional)" style={{ padding: 10, borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 13 }} />
 
