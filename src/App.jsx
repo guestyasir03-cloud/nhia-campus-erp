@@ -18,6 +18,7 @@ import UserPasswordsPanel from './components/UserPasswordsPanel';
 import ReportsModule from './modules/ReportsModule';
 import LeaveModule from './modules/LeaveModule';
 import ChangePasswordBox from './components/ChangePasswordBox';
+import ClassSummaryBoard from './components/ClassSummaryBoard';
 import YearResetPanel from './components/YearResetPanel';
 const ICON_MAP = {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
@@ -655,6 +656,8 @@ export default function App() {
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Present today</div>
               </div>
             </div>
+
+            {currentRole !== 'student' && <ClassSummaryBoard />}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               {visibleModules.map(mod => {
