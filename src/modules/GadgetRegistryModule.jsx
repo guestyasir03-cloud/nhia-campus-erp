@@ -23,7 +23,7 @@ function todayStr() {
 }
 
 export default function GadgetRegistryModule({ onBack, user }) {
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = ['admin', 'super_admin', 'superadmin', 'coordinator'].includes(String(user?.role || '').toLowerCase());
 
   const [tab, setTab] = useState('list');
   const [gadgets, setGadgets] = useState([]);
@@ -542,7 +542,7 @@ export default function GadgetRegistryModule({ onBack, user }) {
       )}
 
       {/* Navigation Tabs */}
-      <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 6, marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
         {[
           ['list', `Gadgets (${gadgets.length})`, Smartphone],
           ['req', 'Send Request', PlusCircle],
@@ -786,6 +786,22 @@ export default function GadgetRegistryModule({ onBack, user }) {
                     <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
                       By: {r.requested_by} {r.note ? `• Note: ${r.note}` : ''}
                     </div>
+                    {isAdmin && r.state === 'PENDING' && (
+                      <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+                        <input
+                          value={adminNotes[r.req_id] || ''}
+                          onChange={e => setAdminNotes(prev => ({ ...prev, [r.req_id]: e.target.value }))}
+                          placeholder="Admin note (optional)..."
+                          style={{ ...inputStyle, flex: '1 1 140px', padding: '5px 8px', fontSize: 12 }}
+                        />
+                        <button onClick={() => handleDecide(r, true)} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 11.5, cursor: 'pointer' }}>
+                          Approve
+                        </button>
+                        <button onClick={() => handleDecide(r, false)} style={{ padding: '6px 12px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', fontWeight: 700, fontSize: 11.5, cursor: 'pointer' }}>
+                          Reject
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
