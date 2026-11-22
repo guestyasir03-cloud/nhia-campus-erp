@@ -40,6 +40,90 @@ export default function AttendanceModule({ onBack, user }) {
   const [historyList, setHistoryList] = useState([]);
   const [expandedSession, setExpandedSession] = useState(null);
 
+  // Admin Editable Sessions State
+  const [sessions, setSessions] = useState(DEFAULT_SESSIONS);
+  const [showManageSessions, setShowManageSessions] = useState(false);
+  const [newSessionName, setNewSessionName] = useState('');
+  const [editingSessionIdx, setEditingSessionIdx] = useState(null);
+  const [editingSessionVal, setEditingSessionVal] = useState('');
+  const [savingSessions, setSavingSessions] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'attendance_sessions')
+        .maybeSingle();
+      if (data?.value) {
+        try {
+          const parsed = JSON.parse(data.value);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setSessions(parsed);
+            if (!parsed.includes(spotSession)) setSpotSession(parsed[0]);
+          }
+        } catch {}
+      }
+    })();
+  }, []);
+
+  async function persistSessions(nextList, renamedFrom, renamedTo) {
+    setSavingSessions(true);
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: 'attendance_sessions', value: JSON.stringify(nextList) }, { onConflict: 'key' });
+    setSavingSessions(false);
+    if (error) {
+      setMsg('Error saving sessions: ' + error.message);
+      return false;
+    }
+    setSessions(nextList);
+    if (renamedFrom && spotSession === renamedFrom) {
+      setSpotSession(renamedTo || nextList[0] || '');
+    } else if (!nextList.includes(spotSession)) {
+      setSpotSession(nextList[0] || '');
+    }
+    setMsg('Sessions updated!');
+    return true;
+  }
+
+  async function handleAddSession() {
+    const trimmed = newSessionName.trim();
+    if (!trimmed) return;
+    if (sessions.some(s => s.toLowerCase() === trimmed.toLowerCase())) {
+      setMsg('Session already exists.');
+      return;
+    }
+    const next = [...sessions, trimmed];
+    if (await persistSessions(next)) setNewSessionName('');
+  }
+
+  async function handleUpdateSession(idx) {
+    const trimmed = editingSessionVal.trim();
+    if (!trimmed) return;
+    const oldName = sessions[idx];
+    if (sessions.some((s, i) => i !== idx && s.toLowerCase() === trimmed.toLowerCase())) {
+      setMsg('Session name already exists.');
+      return;
+    }
+    const next = sessions.map((s, i) => (i === idx ? trimmed : s));
+    if (await persistSessions(next, oldName, trimmed)) {
+      setEditingSessionIdx(null);
+      setEditingSessionVal('');
+    }
+  }
+
+  async function handleDeleteSession(idx) {
+    if (sessions.length <= 1) {
+      setMsg('At least one session is required.');
+      return;
+    }
+    const target = sessions[idx];
+    if (!window.confirm(`Delete session "${target}"?`)) return;
+    const next = sessions.filter((_, i) => i !== idx);
+    await persistSessions(next, target, next[0]);
+  }
+
   // Monthly Ledger State
   const [monthYear, setMonthYear] = useState(() => new Date().toISOString().slice(0, 7));
   const [monthlyClass, setMonthlyClass] = useState('');
@@ -637,10 +721,65 @@ export default function AttendanceModule({ onBack, user }) {
                 </div>
 
                 <div>
-                  <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Session</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>Session</label>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => { setShowManageSessions(v => !v); setEditingSessionIdx(null); }}
+                        style={{ background: 'none', border: 'none', color: '#2e44d2', fontSize: 11, fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                      >
+                        {showManageSessions ? 'Done' : '+ Manage Sessions'}
+                      </button>
+                    )}
+                  </div>
                   <select value={spotSession} onChange={e => setSpotSession(e.target.value)} style={{ width: '100%', padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, marginTop: 4, background: '#fff' }}>
-                    {DEFAULT_SESSIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                    {sessions.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
+
+                  {isAdmin && showManageSessions && (
+                    <div style={{ marginTop: 8, padding: 10, borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <input
+                          value={newSessionName}
+                          onChange={e => setNewSessionName(e.target.value)}
+                          placeholder="New session name..."
+                          style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}
+                        />
+                        <button
+                          type="button"
+                          onClick={handleAddSession}
+                          disabled={savingSessions || !newSessionName.trim()}
+                          style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Add
+                        </button>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        {sessions.map((s, idx) => (
+                          <div key={s + idx} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', padding: '6px 8px', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                            {editingSessionIdx === idx ? (
+                              <>
+                                <input
+                                  value={editingSessionVal}
+                                  onChange={e => setEditingSessionVal(e.target.value)}
+                                  style={{ flex: 1, padding: '4px 8px', borderRadius: 6, border: '1px solid #93c5fd', fontSize: 12 }}
+                                />
+                                <button type="button" onClick={() => handleUpdateSession(idx)} disabled={savingSessions} style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#16a34a', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Save</button>
+                                <button type="button" onClick={() => setEditingSessionIdx(null)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#475569', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                              </>
+                            ) : (
+                              <>
+                                <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{s}</span>
+                                <button type="button" onClick={() => { setEditingSessionIdx(idx); setEditingSessionVal(s); }} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#2e44d2', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Edit</button>
+                                <button type="button" onClick={() => handleDeleteSession(idx)} disabled={savingSessions} style={{ padding: '4px 7px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>Delete</button>
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {spotSession === 'Custom' && (
