@@ -22,6 +22,14 @@ function formatYM(ym) {
   return `${MONTH_NAMES[m - 1]} ${y}`;
 }
 
+function subtractOneMonth(ym) {
+  if (!ym || !ym.includes('-')) return null;
+  let [y, m] = ym.split('-').map(Number);
+  m -= 1;
+  if (m < 1) { m = 12; y -= 1; }
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
 function addOneMonth(ym) {
   const base = ym && ym.includes('-') ? ym : getCurrentYM();
   let [y, m] = base.split('-').map(Number);
@@ -133,6 +141,21 @@ export default function FinanceModule({ onBack, user }) {
     ]);
   }
 
+    async function handleUndoOneMonth(s) {
+    const currentLP = lastPaidMap[s.adm_no];
+    if (!currentLP) return alert(`No paid month found for ${s.name}.`);
+    if (!window.confirm(`Undo ${formatYM(currentLP)} payment & delete its receipt for ${s.name}?`)) return;
+
+    const prevYM = subtractOneMonth(currentLP);
+    setLastPaidMap(prev => ({ ...prev, [s.adm_no]: prevYM }));
+    setMsg(`Reverted ${formatYM(currentLP)} for ${s.name}. Last Paid is now ${formatYM(prevYM)}.`);
+
+    await Promise.all([
+      supabase.from('students').update({ last_paid_month: prevYM }).eq('adm_no', s.adm_no),
+      supabase.from('donation_receipts').delete().eq('adm_no', s.adm_no).eq('month_paid', currentLP)
+    ]);
+  }
+
   async function saveClassSetup() {
     if (students.length === 0) return;
     setLoading(true);
@@ -161,28 +184,6 @@ export default function FinanceModule({ onBack, user }) {
               .gt('month_paid', u.last_paid_month)
           )
       );
-
-      // Auto-create receipt for the saved Last Paid Month if not already present
-      const { data: existingRecs } = await supabase
-        .from('donation_receipts')
-        .select('adm_no, month_paid')
-        .gt('amount', 0)
-        .eq('class_name', selectedClass);
-
-      const existingSet = new Set((existingRecs || []).map(r => `${r.adm_no}_${r.month_paid}`));
-      const newReceipts = updates
-        .filter(u => u.last_paid_month && u.monthly_donation > 0 && !existingSet.has(`${u.adm_no}_${u.last_paid_month}`))
-        .map(u => ({
-          adm_no: u.adm_no,
-          class_name: selectedClass,
-          month_paid: u.last_paid_month,
-          amount: u.monthly_donation,
-          recorded_by: user?.name || 'Admin'
-        }));
-
-      if (newReceipts.length > 0) {
-        await supabase.from('donation_receipts').insert(newReceipts);
-      }
     }
     setLoading(false);
     if (error) setMsg('Error: ' + error.message);
