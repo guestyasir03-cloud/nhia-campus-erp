@@ -246,16 +246,163 @@ export default function AttendanceModule({ onBack, user }) {
     setHistoryList(groupedList);
   }
 
-  function copyCombinedSessionReport(sg) {
-    let text = `NOORUL HIDAYA ISLAMIC ACADEMY\n`;
-    text += `Attendance Report — ${sg.session}\n`;
-    text += `Date: ${sg.date} | Classes: ${sg.classes.length}\n`;
-    text += `Grand Total: P: ${sg.P} | A: ${sg.A} | L: ${sg.L} (Total: ${sg.total})\n\n`;
-    sg.classes.forEach(c => {
-      text += `• ${c.className} (${c.takenBy}): P:${c.P} A:${c.A} L:${c.L}\n`;
+  async function fetchSessionStudentDetails(sg) {
+    const [{ data: attRows }, { data: stRows }] = await Promise.all([
+      supabase
+        .from('spot_attendance')
+        .select('adm_no, class_name, status')
+        .eq('session_date', sg.date)
+        .eq('session_name', sg.session)
+        .in('status', ['A', 'L']),
+      supabase.from('students').select('adm_no, name')
+    ]);
+    const nameMap = {};
+    (stRows || []).forEach(s => { nameMap[String(s.adm_no)] = s.name; });
+
+    const byClass = {};
+    (attRows || []).forEach(r => {
+      if (!byClass[r.class_name]) byClass[r.class_name] = { A: [], L: [] };
+      const label = `${nameMap[String(r.adm_no)] || r.adm_no} (${r.adm_no})`;
+      if (r.status === 'A') byClass[r.class_name].A.push(label);
+      if (r.status === 'L') byClass[r.class_name].L.push(label);
     });
-    navigator.clipboard.writeText(text);
-    setMsg(`Copied combined report for ${sg.session} (${sg.date}).`);
+    return byClass;
+  }
+
+  async function copyCombinedSessionReport(sg) {
+    setLoading(true);
+    const details = await fetchSessionStudentDetails(sg);
+    setLoading(false);
+
+    const grandPerc = sg.total > 0 ? ((sg.P / sg.total) * 100).toFixed(1) : '0.0';
+    let text = `*NOORUL HIDAYA ISLAMIC ACADEMY*\n`;
+    text += `*Detailed Attendance Report — ${sg.session}*\n`;
+    text += `Date: ${sg.date} | Classes: ${sg.classes.length}\n`;
+    text += `--------------------------------\n`;
+    text += `*GRAND TOTAL:* ${sg.total} Students\n`;
+    text += `Present: ${sg.P} (${grandPerc}%) | Absent: ${sg.A} | Leave: ${sg.L}\n`;
+    text += `--------------------------------\n\n`;
+
+    sg.classes.forEach((c, idx) => {
+      const cPerc = c.total > 0 ? ((c.P / c.total) * 100).toFixed(1) : '0.0';
+      const d = details[c.className] || { A: [], L: [] };
+      text += `*${idx + 1}. Class ${c.className}* (Teacher: ${c.takenBy})\n`;
+      text += `   Total: ${c.total} | P: ${c.P} (${cPerc}%) | A: ${c.A} | L: ${c.L}\n`;
+      if (d.A.length > 0) text += `   Absent: ${d.A.join(', ')}\n`;
+      if (d.L.length > 0) text += `   Leave: ${d.L.join(', ')}\n`;
+      text += `\n`;
+    });
+
+    navigator.clipboard.writeText(text.trim());
+    setMsg(`Copied detailed WhatsApp report for ${sg.session} (${sg.date}).`);
+  }
+
+  async function downloadCombinedSessionPDF(sg) {
+    setLoading(true);
+    const details = await fetchSessionStudentDetails(sg);
+    setLoading(false);
+
+    const grandPerc = sg.total > 0 ? ((sg.P / sg.total) * 100).toFixed(1) : '0.0';
+
+    const classRowsHtml = sg.classes.map((c, idx) => {
+      const cPerc = c.total > 0 ? ((c.P / c.total) * 100).toFixed(1) : '0.0';
+      return `<tr>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${idx + 1}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;font-weight:700;">${c.className}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;">${c.takenBy}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${c.total}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;color:#15803d;font-weight:700;">${c.P}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;color:#dc2626;font-weight:700;">${c.A}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;color:#d97706;font-weight:700;">${c.L}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-weight:700;">${cPerc}%</td>
+      </tr>`;
+    }).join('');
+
+    const absLeaveBlocks = sg.classes.map(c => {
+      const d = details[c.className] || { A: [], L: [] };
+      if (d.A.length === 0 && d.L.length === 0) return '';
+      return `<div style="margin-bottom:8px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;">
+        <div style="font-weight:700;font-size:12px;color:#0f172a;margin-bottom:4px;">Class ${c.className} — ${c.takenBy}</div>
+        ${d.A.length > 0 ? `<div style="font-size:11px;color:#dc2626;margin-bottom:2px;"><b>Absent (${d.A.length}):</b> ${d.A.join(', ')}</div>` : ''}
+        ${d.L.length > 0 ? `<div style="font-size:11px;color:#b45309;"><b>Leave (${d.L.length}):</b> ${d.L.join(', ')}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    const container = document.createElement('div');
+    container.innerHTML = `
+      <div style="padding:18px;font-family:Arial,sans-serif;color:#0f172a;">
+        <div style="text-align:center;border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px;">
+          <div style="font-size:18px;font-weight:800;">NOORUL HIDAYA ISLAMIC ACADEMY, PATTAMBI</div>
+          <div style="font-size:13px;font-weight:700;color:#334155;margin-top:3px;">Detailed Attendance Report — ${sg.session}</div>
+          <div style="font-size:11px;color:#64748b;margin-top:2px;">Date: ${sg.date} &nbsp;|&nbsp; Total Classes: ${sg.classes.length}</div>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="border:1px solid #cbd5e1;padding:7px;">#</th>
+              <th style="border:1px solid #cbd5e1;padding:7px;text-align:left;">Class</th>
+              <th style="border:1px solid #cbd5e1;padding:7px;text-align:left;">Teacher Taken</th>
+              <th style="border:1px solid #cbd5e1;padding:7px;">Total</th>
+              <th style="border:1px solid #cbd5e1;padding:7px;">Present</th>
+              <th style="border:1px solid #cbd5e1;padding:7px;">Absent</th>
+              <th style="border:1px solid #cbd5e1;padding:7px;">Leave</th>
+              <th style="border:1px solid #cbd5e1;padding:7px;">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${classRowsHtml}
+            <tr style="background:#eef2ff;font-weight:800;">
+              <td colspan="3" style="border:1px solid #cbd5e1;padding:7px;text-align:right;">GRAND TOTAL</td>
+              <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;">${sg.total}</td>
+              <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;color:#15803d;">${sg.P}</td>
+              <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;color:#dc2626;">${sg.A}</td>
+              <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;color:#d97706;">${sg.L}</td>
+              <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;">${grandPerc}%</td>
+            </tr>
+          </tbody>
+        </table>
+
+        ${absLeaveBlocks ? `<div style="font-size:13px;font-weight:800;margin-bottom:8px;color:#0f172a;">Absent & Leave Details</div>${absLeaveBlocks}` : ''}
+      </div>
+    `;
+
+    html2pdf().set({
+      margin: 8,
+      filename: `NHIA_Attendance_${sg.session}_${sg.date}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(container).save();
+  }
+
+  async function deleteSessionGroup(sg) {
+    if (!window.confirm(`Delete entire "${sg.session}" (${sg.date}) attendance for all ${sg.classes.length} class(es)?`)) return;
+    setLoading(true);
+    const { error } = await supabase
+      .from('spot_attendance')
+      .delete()
+      .eq('session_date', sg.date)
+      .eq('session_name', sg.session);
+    setLoading(false);
+    if (error) return setMsg('Delete failed: ' + error.message);
+    setHistoryList(prev => prev.filter(item => item.key !== sg.key));
+    setMsg(`Deleted "${sg.session}" (${sg.date}).`);
+  }
+
+  async function deleteClassSession(sg, c) {
+    if (!window.confirm(`Delete ${c.className} attendance from "${sg.session}" (${sg.date})?`)) return;
+    setLoading(true);
+    const { error } = await supabase
+      .from('spot_attendance')
+      .delete()
+      .eq('session_date', sg.date)
+      .eq('session_name', sg.session)
+      .eq('class_name', c.className);
+    setLoading(false);
+    if (error) return setMsg('Delete failed: ' + error.message);
+    loadSpotHistory();
+    setMsg(`Deleted ${c.className} from "${sg.session}".`);
   }
 
   function openForEdit(h) {
@@ -514,9 +661,20 @@ export default function AttendanceModule({ onBack, user }) {
                     <button onClick={() => downloadPDF('nhia-spot-sheet', `${spotClass}_${activeSessionName}_${spotDate}.pdf`)} style={{ padding: 10, borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                       <Download size={13} /> PDF
                     </button>
-                    <button onClick={() => downloadCSV(`${spotClass}_${activeSessionName}_${spotDate}.csv`, ['Adm No', 'Student Name', 'Status', 'Date', 'Session'], spotStudents.map(s => [s.adm_no, s.name, spotMap[s.adm_no] || 'P', spotDate, activeSessionName]))} style={{ padding: 10, borderRadius: 10, border: 'none', background: '#10b981', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                      <FileSpreadsheet size={13} /> Excel
-                    </button>
+                    <button
+                                onClick={() => downloadCombinedSessionPDF(sg)}
+                                title="Download Detailed PDF Report"
+                                style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#dc2626', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                              >
+                                <Download size={11} /> PDF
+                              </button>
+                              <button
+                                onClick={() => deleteSessionGroup(sg)}
+                                title="Delete entire session"
+                                style={{ padding: '4px 7px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                              >
+                                <Trash2 size={12} />
+                              </button>
                   </div>
                 </>
               )}
@@ -608,12 +766,21 @@ export default function AttendanceModule({ onBack, user }) {
                                     <span style={{ color: '#d97706' }}>L: {c.L}</span>
                                   </div>
                                 </div>
-                                <button
+                                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                                  <button
                                   onClick={() => openForEdit(c)}
                                   style={{ padding: '6px 12px', borderRadius: 7, border: 'none', background: '#0284c7', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
                                 >
                                   Edit
                                 </button>
+                                  <button
+                                    onClick={() => deleteClassSession(sg, c)}
+                                    title="Delete this class attendance"
+                                    style={{ padding: '6px 8px', borderRadius: 7, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
