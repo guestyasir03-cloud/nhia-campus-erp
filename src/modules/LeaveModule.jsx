@@ -1,3 +1,4 @@
+import html2pdf from 'html2pdf.js';
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { exportReportPDF, exportReportJPEG, exportReportCSV } from '../lib/exportReport';
@@ -99,6 +100,111 @@ export default function LeaveModule({ user, onBack }) {
   const [openReportDates, setOpenReportDates] = useState({});
   const [insightSearch, setInsightSearch] = useState('');
   const [expandedLeaveClass, setExpandedLeaveClass] = useState(null);
+
+  function copyClassWiseLeaveReport() {
+    let text = `*NOORUL HIDAYA ISLAMIC ACADEMY*\n`;
+    text += `*Class-wise Total Leave Report*\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+    insights.classRows.forEach(([cls, hrs], idx) => {
+      const classStudents = insights.studentRows
+        .filter(s => s.class_name === cls)
+        .sort((a, b) => (b.totalHours || 0) - (a.totalHours || 0));
+      text += `*${idx + 1}. Class ${cls}* — Total: *${formatDuration(hrs)}* (${classStudents.length} Students)\n`;
+      classStudents.forEach(s => {
+        text += `• ${s.name} (${s.adm_no}) — ${s.count}x | ${formatDuration(s.totalHours)}\n`;
+      });
+      text += `\n`;
+    });
+
+    navigator.clipboard.writeText(text.trim());
+    alert('Copied complete Class-wise Leave Report for WhatsApp!');
+  }
+
+  function downloadClassWiseLeavePDF() {
+    const totalHrsAll = insights.classRows.reduce((sum, [, hrs]) => sum + (hrs || 0), 0);
+    const totalStudentsAll = insights.studentRows.length;
+
+    const summaryRows = insights.classRows.map(([cls, hrs], idx) => {
+      const cStudents = insights.studentRows.filter(s => s.class_name === cls);
+      const cCount = cStudents.reduce((sum, s) => sum + (s.count || 0), 0);
+      return `<tr style="background:${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${idx + 1}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;font-weight:700;">${cls}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${cStudents.length}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${cCount}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;color:#dc2626;font-weight:700;">${formatDuration(hrs)}</td>
+      </tr>`;
+    }).join('');
+
+    const classDetailsHtml = insights.classRows.map(([cls, hrs]) => {
+      const cStudents = insights.studentRows
+        .filter(s => s.class_name === cls)
+        .sort((a, b) => (b.totalHours || 0) - (a.totalHours || 0));
+      const rows = cStudents.map((s, i) => `<tr>
+        <td style="border:1px solid #e2e8f0;padding:5px;text-align:center;width:30px;">${i + 1}</td>
+        <td style="border:1px solid #e2e8f0;padding:5px;width:65px;">${s.adm_no}</td>
+        <td style="border:1px solid #e2e8f0;padding:5px;font-weight:600;">${s.name}</td>
+        <td style="border:1px solid #e2e8f0;padding:5px;text-align:center;width:70px;">${s.count} Leave${s.count !== 1 ? 's' : ''}</td>
+        <td style="border:1px solid #e2e8f0;padding:5px;text-align:center;width:85px;color:#dc2626;font-weight:700;">${formatDuration(s.totalHours)}</td>
+      </tr>`).join('');
+
+      return `<div style="page-break-inside:avoid;margin-bottom:14px;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;">
+        <div style="background:#f1f5f9;padding:6px 10px;font-weight:800;font-size:12px;color:#0f172a;border-bottom:1px solid #cbd5e1;display:flex;justify-content:space-between;">
+          <span>Class ${cls} (${cStudents.length} Students)</span>
+          <span style="color:#dc2626;">Total: ${formatDuration(hrs)}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <thead>
+            <tr style="background:#f8fafc;color:#475569;">
+              <th style="border:1px solid #e2e8f0;padding:5px;">#</th>
+              <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Adm No</th>
+              <th style="border:1px solid #e2e8f0;padding:5px;text-align:left;">Student Name</th>
+              <th style="border:1px solid #e2e8f0;padding:5px;">Leaves</th>
+              <th style="border:1px solid #e2e8f0;padding:5px;">Duration</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    }).join('');
+
+    const container = document.createElement('div');
+    container.innerHTML = `
+      <div style="padding:20px;font-family:Arial,sans-serif;color:#0f172a;border:1.5px solid #0f172a;">
+        <div style="position:relative;text-align:center;border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px;min-height:52px;">
+          <img src="/logo.jpg" style="position:absolute;left:4px;top:0;width:48px;height:48px;object-fit:contain;" />
+          <div style="font-size:17px;font-weight:800;">NOORUL HIDAYA ISLAMIC ACADEMY, PATTAMBI</div>
+          <div style="font-size:13px;font-weight:700;color:#1e293b;margin-top:2px;">Complete Class-wise Leave Duration Report</div>
+          <div style="font-size:11px;color:#475569;margin-top:2px;">Generated: <b>${new Date().toLocaleDateString('en-IN')}</b> &nbsp;|&nbsp; Total Students: <b>${totalStudentsAll}</b> &nbsp;|&nbsp; Grand Total: <b>${formatDuration(totalHrsAll)}</b></div>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:16px;">
+          <thead>
+            <tr style="background:#0f172a;color:#fff;">
+              <th style="border:1px solid #0f172a;padding:7px;width:35px;">#</th>
+              <th style="border:1px solid #0f172a;padding:7px;text-align:left;">Class</th>
+              <th style="border:1px solid #0f172a;padding:7px;">Students</th>
+              <th style="border:1px solid #0f172a;padding:7px;">Total Leaves</th>
+              <th style="border:1px solid #0f172a;padding:7px;">Total Duration</th>
+            </tr>
+          </thead>
+          <tbody>${summaryRows}</tbody>
+        </table>
+
+        <div style="font-size:13px;font-weight:800;margin-bottom:8px;color:#0f172a;border-bottom:1px solid #cbd5e1;padding-bottom:4px;">Class-wise Student Breakdown</div>
+        ${classDetailsHtml}
+      </div>
+    `;
+
+    html2pdf().set({
+      margin: 8,
+      filename: `NHIA_Classwise_Leave_Report_${new Date().toISOString().slice(0, 10)}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(container).save();
+  }
   const [selectedStudentReport, setSelectedStudentReport] = useState(null);
 
   useEffect(() => {
@@ -1066,7 +1172,22 @@ export default function LeaveModule({ user, onBack }) {
               <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                   <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Class-wise Total Leave Duration</div>
-                  <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Tap class to view students</span>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <button
+                      type="button"
+                      onClick={copyClassWiseLeaveReport}
+                      style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Copy
+                    </button>
+                    <button
+                      type="button"
+                      onClick={downloadClassWiseLeavePDF}
+                      style={{ padding: '4px 9px', borderRadius: 7, border: 'none', background: '#dc2626', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Download PDF
+                    </button>
+                  </div>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {insights.classRows.map(([cls, hrs]) => {
