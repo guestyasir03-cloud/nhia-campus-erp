@@ -126,7 +126,9 @@ export default function App() {
       if (modData && modData.length > 0) {
         const existingIds = new Set(modData.map(m => m.id));
         const missingDefaults = DEFAULT_MODULES.filter(m => !existingIds.has(m.id));
-        setModules([...modData, ...missingDefaults]);
+        const merged = [...modData, ...missingDefaults];
+        merged.sort((a, b) => (a.id === 'settings' ? 1 : b.id === 'settings' ? -1 : 0));
+        setModules(merged);
       }
       setStats(prev => ({
         ...prev,
@@ -449,6 +451,8 @@ export default function App() {
           <AttendanceModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'leave' ? (
           <LeaveModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'gadgets' ? (
+          <GadgetRegistryModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'finance' ? (
           <FinanceModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'activity' ? (
