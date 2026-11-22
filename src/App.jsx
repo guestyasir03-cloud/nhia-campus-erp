@@ -90,7 +90,7 @@ export default function App() {
   const [modules, setModules] = useState(DEFAULT_MODULES);
   const [roles, setRoles] = useState(DEFAULT_ROLES);
   const [newRoleName, setNewRoleName] = useState('');
-  const [stats, setStats] = useState({ students: 0, staff: 0, attendance: '94%' });
+  const [stats, setStats] = useState({ students: 0, staff: 0, attendance: '—' });
   const [newModName, setNewModName] = useState('');
   const [academicYear, setAcademicYear] = useState('2026–27');
   const [resetting, setResetting] = useState(false);
@@ -109,18 +109,23 @@ export default function App() {
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     (async () => {
+      const todayStr = new Date().toLocaleDateString('en-CA');
       const [
         { data: modData },
         { count: stCount },
         { count: sfCount },
         { data: settingsData },
-        { data: logoData }
+        { data: logoData },
+        { data: todayAtt },
+        { count: activeOutCount }
       ] = await Promise.all([
         supabase.from('portal_modules').select('*').order('sort_order'),
         supabase.from('students').select('*', { count: 'exact', head: true }),
         supabase.from('staff').select('*', { count: 'exact', head: true }),
         supabase.from('app_settings').select('key, value').in('key', ['academic_year', 'portal_roles']),
-        supabase.from('user_avatars').select('avatar_data').eq('user_key', 'academy_logo').maybeSingle()
+        supabase.from('user_avatars').select('avatar_data').eq('user_key', 'academy_logo').maybeSingle(),
+        supabase.from('attendance').select('status').eq('date', todayStr),
+        supabase.from('student_leaves').select('*', { count: 'exact', head: true }).neq('status', 'Returned').lte('start_date', todayStr)
       ]);
 
       if (modData && modData.length > 0) {
@@ -130,10 +135,19 @@ export default function App() {
         merged.sort((a, b) => (a.id === 'settings' ? 1 : b.id === 'settings' ? -1 : 0));
         setModules(merged);
       }
+      let livePct = '100%';
+      if (todayAtt && todayAtt.length > 0) {
+        const presentCount = todayAtt.filter(a => /^(p|present)$/i.test(String(a.status || '').trim())).length;
+        livePct = Math.round((presentCount / todayAtt.length) * 100) + '%';
+      } else if (stCount > 0) {
+        const presentEst = Math.max(0, stCount - (activeOutCount || 0));
+        livePct = Math.round((presentEst / stCount) * 100) + '%';
+      }
       setStats(prev => ({
         ...prev,
         students: stCount || prev.students,
-        staff: sfCount || prev.staff
+        staff: sfCount || prev.staff,
+        attendance: livePct
       }));
 
       (settingsData || []).forEach(s => {
