@@ -224,8 +224,14 @@ export default function ActivityModule({ onBack, user }) {
   const visibleStudentRows = useMemo(() => {
     const q = reportSearch.trim().toLowerCase();
     return analytics.studentRows.filter(r => {
+      if (standingFilter === 'MERIT' && r.merit <= 0) return false;
+      if (standingFilter === 'DEMERIT' && r.demerit <= 0) return false;
       if (standingFilter === 'MUMTAZ' && r.net < 50) return false;
+      if (standingFilter === 'COMMENDABLE' && (r.net < 15 || r.net >= 50)) return false;
+      if (standingFilter === 'WARNING' && (r.net >= 0 || r.net < -19)) return false;
+      if (standingFilter === 'ACTION' && r.net >= -19) return false;
       if (standingFilter === 'ATTENTION' && r.net >= 0) return false;
+      if (standingFilter === 'ACTIVE' && r.count === 0) return false;
       if (q && !String(r.name || '').toLowerCase().includes(q) && !String(r.adm_no || '').toLowerCase().includes(q)) {
         return false;
       }
@@ -775,27 +781,55 @@ export default function ActivityModule({ onBack, user }) {
       {/* ==================== TAB 2: ADVANCED REPORTS & ANALYTICS ==================== */}
       {tab === 'report' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* KPI Cards */}
+          {/* KPI Cards (Clickable Quick Filters) */}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 6px', textAlign: 'center' }}>
+            <div
+              onClick={() => { setReportView('students'); setStandingFilter(standingFilter === 'MERIT' ? 'ALL' : 'MERIT'); }}
+              style={{
+                background: standingFilter === 'MERIT' ? '#f0fdf4' : '#fff',
+                border: standingFilter === 'MERIT' ? '2px solid #16a34a' : '1px solid #e2e8f0',
+                borderRadius: 12, padding: '10px 6px', textAlign: 'center', cursor: 'pointer'
+              }}
+            >
               <TrendingUp size={15} color="#16a34a" style={{ marginBottom: 2 }} />
               <div style={{ fontSize: 16, fontWeight: 800, color: '#15803d' }}>+{analytics.totalMerit}</div>
-              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Merit</div>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>Merit List</div>
             </div>
-            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 6px', textAlign: 'center' }}>
+            <div
+              onClick={() => { setReportView('students'); setStandingFilter(standingFilter === 'DEMERIT' ? 'ALL' : 'DEMERIT'); }}
+              style={{
+                background: standingFilter === 'DEMERIT' ? '#fef2f2' : '#fff',
+                border: standingFilter === 'DEMERIT' ? '2px solid #dc2626' : '1px solid #e2e8f0',
+                borderRadius: 12, padding: '10px 6px', textAlign: 'center', cursor: 'pointer'
+              }}
+            >
               <TrendingDown size={15} color="#dc2626" style={{ marginBottom: 2 }} />
               <div style={{ fontSize: 16, fontWeight: 800, color: '#dc2626' }}>-{analytics.totalDemerit}</div>
-              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Demerit</div>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>Demerit List</div>
             </div>
-            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 6px', textAlign: 'center' }}>
+            <div
+              onClick={() => { setReportView('students'); setStandingFilter(standingFilter === 'MUMTAZ' ? 'ALL' : 'MUMTAZ'); }}
+              style={{
+                background: standingFilter === 'MUMTAZ' ? '#eef2ff' : '#fff',
+                border: standingFilter === 'MUMTAZ' ? '2px solid #2e44d2' : '1px solid #e2e8f0',
+                borderRadius: 12, padding: '10px 6px', textAlign: 'center', cursor: 'pointer'
+              }}
+            >
               <Award size={15} color="#2e44d2" style={{ marginBottom: 2 }} />
               <div style={{ fontSize: 16, fontWeight: 800, color: '#2e44d2' }}>{analytics.mumtazCount}</div>
-              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Mumtaz</div>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>Mumtaz</div>
             </div>
-            <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: '10px 6px', textAlign: 'center' }}>
+            <div
+              onClick={() => { setReportView('students'); setStandingFilter(standingFilter === 'ATTENTION' ? 'ALL' : 'ATTENTION'); }}
+              style={{
+                background: standingFilter === 'ATTENTION' ? '#fffbeb' : '#fff',
+                border: standingFilter === 'ATTENTION' ? '2px solid #b45309' : '1px solid #e2e8f0',
+                borderRadius: 12, padding: '10px 6px', textAlign: 'center', cursor: 'pointer'
+              }}
+            >
               <ShieldAlert size={15} color="#b45309" style={{ marginBottom: 2 }} />
               <div style={{ fontSize: 16, fontWeight: 800, color: '#b45309' }}>{analytics.attentionCount}</div>
-              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Warning</div>
+              <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700 }}>Warning</div>
             </div>
           </div>
 
@@ -836,9 +870,15 @@ export default function ActivityModule({ onBack, user }) {
               </select>
               {reportView === 'students' ? (
                 <select value={standingFilter} onChange={e => setStandingFilter(e.target.value)} style={{ padding: 8, borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600 }}>
-                  <option value="ALL">All Standings</option>
-                  <option value="MUMTAZ">Mumtaz Only (50+)</option>
-                  <option value="ATTENTION">Warning / Action (&lt; 0)</option>
+                  <option value="ALL">All Students</option>
+                  <option value="MERIT">Merit Holders (+)</option>
+                  <option value="DEMERIT">Demerit Holders (-)</option>
+                  <option value="ATTENTION">All Warning &amp; Action (&lt; 0)</option>
+                  <option value="WARNING">Warning Only (-1 to -19)</option>
+                  <option value="ACTION">Action Required (-20 &amp; below)</option>
+                  <option value="MUMTAZ">Mumtaz (50+)</option>
+                  <option value="COMMENDABLE">Commendable (15 to 49)</option>
+                  <option value="ACTIVE">Only Students with Entries</option>
                 </select>
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', fontSize: 11, color: '#64748b', paddingLeft: 4 }}>
