@@ -276,32 +276,33 @@ export default function AttendanceModule({ onBack, user }) {
 
     const grandPerc = sg.total > 0 ? ((sg.P / sg.total) * 100).toFixed(1) : '0.0';
     let text = `*NOORUL HIDAYA ISLAMIC ACADEMY*\n`;
-    text += `📋 *Attendance Report — ${sg.session}*\n`;
-    text += `📅 Date: ${sg.date}  |  🏫 Classes: ${sg.classes.length}\n`;
+    text += `*Attendance Report — ${sg.session}*\n`;
+    text += `Date: ${sg.date} | Classes: ${sg.classes.length}\n`;
     text += `━━━━━━━━━━━━━━━━━━━━\n`;
     text += `*GRAND TOTAL:* ${sg.total} Students\n`;
-    text += `✅ Present: *${sg.P}* (${grandPerc}%)\n`;
-    text += `❌ Absent: *${sg.A}*  |  🟡 Leave: *${sg.L}*\n`;
+    text += `• Present: *${sg.P}* (${grandPerc}%)\n`;
+    text += `• Absent: *${sg.A}*\n`;
+    text += `• Leave: *${sg.L}*\n`;
     text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
     sg.classes.forEach((c, idx) => {
       const cPerc = c.total > 0 ? ((c.P / c.total) * 100).toFixed(1) : '0.0';
       const d = details[c.className] || { A: [], L: [] };
       text += `*${idx + 1}. Class ${c.className}* (_${c.takenBy}_)\n`;
-      text += `   Total: ${c.total} | P: ${c.P} (${cPerc}%) | A: ${c.A} | L: ${c.L}\n`;
+      text += `Total: ${c.total} | P: ${c.P} (${cPerc}%) | A: ${c.A} | L: ${c.L}\n`;
       if (d.A.length > 0) {
-        text += `   ❌ *Absent (${d.A.length}):*\n`;
-        d.A.forEach((name, i) => { text += `      ${i + 1}. ${name}\n`; });
+        text += `*Absent (${d.A.length}):*\n`;
+        d.A.forEach(name => { text += `• ${name}\n`; });
       }
       if (d.L.length > 0) {
-        text += `   🟡 *Leave (${d.L.length}):*\n`;
-        d.L.forEach((name, i) => { text += `      ${i + 1}. ${name}\n`; });
+        text += `*Leave (${d.L.length}):*\n`;
+        d.L.forEach(name => { text += `• ${name}\n`; });
       }
       text += `\n`;
     });
 
     navigator.clipboard.writeText(text.trim());
-    setMsg(`Copied neat WhatsApp report for ${sg.session} (${sg.date}).`);
+    setMsg(`Copied detailed WhatsApp report for ${sg.session} (${sg.date}).`);
   }
 
   async function downloadCombinedSessionPDF(sg) {
@@ -328,14 +329,16 @@ export default function AttendanceModule({ onBack, user }) {
     const absLeaveBlocks = sg.classes.map(c => {
       const d = details[c.className] || { A: [], L: [] };
       if (d.A.length === 0 && d.L.length === 0) return '';
+      const absList = d.A.map(n => `<div style="padding:1.5px 0;">• ${n}</div>`).join('');
+      const leaveList = d.L.map(n => `<div style="padding:1.5px 0;">• ${n}</div>`).join('');
       return `<div style="page-break-inside:avoid;margin-bottom:10px;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;">
         <div style="background:#f1f5f9;padding:6px 10px;font-weight:700;font-size:12px;color:#0f172a;border-bottom:1px solid #cbd5e1;display:flex;justify-content:space-between;">
           <span>Class ${c.className} — ${c.takenBy}</span>
           <span>P: ${c.P} | A: ${c.A} | L: ${c.L}</span>
         </div>
-        <div style="padding:8px 10px;font-size:11px;line-height:1.5;">
-          ${d.A.length > 0 ? `<div style="margin-bottom:4px;"><b style="color:#dc2626;">Absent (${d.A.length}):</b> ${d.A.map((n, i) => `${i + 1}) ${n}`).join(' &nbsp;•&nbsp; ')}</div>` : ''}
-          ${d.L.length > 0 ? `<div><b style="color:#b45309;">Leave (${d.L.length}):</b> ${d.L.map((n, i) => `${i + 1}) ${n}`).join(' &nbsp;•&nbsp; ')}</div>` : ''}
+        <div style="padding:8px 12px;font-size:11px;line-height:1.45;display:flex;gap:20px;">
+          ${d.A.length > 0 ? `<div style="flex:1;"><div style="font-weight:700;color:#dc2626;margin-bottom:4px;">Absent (${d.A.length}):</div>${absList}</div>` : ''}
+          ${d.L.length > 0 ? `<div style="flex:1;"><div style="font-weight:700;color:#b45309;margin-bottom:4px;">Leave (${d.L.length}):</div>${leaveList}</div>` : ''}
         </div>
       </div>`;
     }).join('');
@@ -751,6 +754,13 @@ export default function AttendanceModule({ onBack, user }) {
                               <span style={{ color: '#475569' }}>Total: {sg.total}</span>
                             </div>
                             <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => copyCombinedSessionReport(sg)}
+                                title="Copy Detailed WhatsApp Report"
+                                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                              >
+                                <Copy size={11} /> Copy
+                              </button>
                               <button
                                 onClick={() => downloadCombinedSessionPDF(sg)}
                                 title="Download Detailed PDF Report"
