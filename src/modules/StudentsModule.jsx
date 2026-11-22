@@ -1,3 +1,4 @@
+﻿import ClassSummaryBoard from '../components/ClassSummaryBoard';
 import React, { useState, useEffect } from 'react';
 import {
   ChevronLeft, Users, UserPlus, Upload, ArrowUpCircle,
@@ -294,6 +295,7 @@ export default function StudentsModule({ onBack, user }) {
     return (
       <div>
         <Header title="Students" backAction={onBack} />
+        <ClassSummaryBoard />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
             { id: 'directory', label: 'Student directory', icon: Users },
@@ -388,7 +390,7 @@ export default function StudentsModule({ onBack, user }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ fontSize: 12, color: '#475569' }}>
-              Start promoting from the highest class first (e.g., <b>D3 → ALUMNI</b>, then <b>D2 → D3</b>, down to <b>S1 → S2</b>). Uncheck failed/detained students so they remain in the same class.
+              Start promoting from the highest class first (e.g., <b>D3 â†’ ALUMNI</b>, then <b>D2 â†’ D3</b>, down to <b>S1 â†’ S2</b>). Uncheck failed/detained students so they remain in the same class.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <div>
@@ -441,7 +443,7 @@ export default function StudentsModule({ onBack, user }) {
                         </div>
                       </div>
                       <span style={{ fontSize: 11, fontWeight: 700, color: checked ? '#16a34a' : '#dc2626' }}>
-                        {checked ? `→ ${promoTarget || '?'}` : 'Detained'}
+                        {checked ? `â†’ ${promoTarget || '?'}` : 'Detained'}
                       </span>
                     </div>
                   );
@@ -475,7 +477,7 @@ export default function StudentsModule({ onBack, user }) {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <button onClick={() => autoAssignRoll('name')} style={{ padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
-                  Auto-Assign (A–Z)
+                  Auto-Assign (Aâ€“Z)
                 </button>
                 <button onClick={() => autoAssignRoll('adm')} style={{ padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
                   Auto-Assign (Adm No)

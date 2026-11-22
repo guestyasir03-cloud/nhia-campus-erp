@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
   Briefcase, Bell, BarChart3, Sliders, Home, User, ChevronLeft,
@@ -18,7 +18,6 @@ import UserPasswordsPanel from './components/UserPasswordsPanel';
 import ReportsModule from './modules/ReportsModule';
 import LeaveModule from './modules/LeaveModule';
 import ChangePasswordBox from './components/ChangePasswordBox';
-import ClassSummaryBoard from './components/ClassSummaryBoard';
 import YearResetPanel from './components/YearResetPanel';
 const ICON_MAP = {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
@@ -45,10 +44,10 @@ const DEFAULT_MODULES = [
 ];
 
 const SUB_MENUS = {
-  examinations: ['Mark entry (W1–W4)', 'Hifz / Midterm entry', 'Class reports', 'Campus performance', 'Pending mark entry', 'Grade cards (PDF)'],
+  examinations: ['Mark entry (W1â€“W4)', 'Hifz / Midterm entry', 'Class reports', 'Campus performance', 'Pending mark entry', 'Grade cards (PDF)'],
   attendance: ['Monthly register', 'Class-wise attendance', 'Attendance percentage', 'Pending alerts', 'Campus analysis'],
   students: ['Student directory', 'Add student', 'Admission numbers', 'Student profile', 'Bulk import'],
-  finance: ['Student ledger', 'Class ledger', 'Donation entry', 'Monthly collection (Apr–Mar)', 'Financial reports'],
+  finance: ['Student ledger', 'Class ledger', 'Donation entry', 'Monthly collection (Aprâ€“Mar)', 'Financial reports'],
   activity: ['Single entry', 'Class-wise bulk entry', 'Reasons and categories', 'Class ranking', 'Discipline report']
 };
 
@@ -91,7 +90,7 @@ export default function App() {
   const [newRoleName, setNewRoleName] = useState('');
   const [stats, setStats] = useState({ students: 0, staff: 0, attendance: '94%' });
   const [newModName, setNewModName] = useState('');
-  const [academicYear, setAcademicYear] = useState('2026–27');
+  const [academicYear, setAcademicYear] = useState('2026â€“27');
   const [resetting, setResetting] = useState(false);
 
   // Academy Logo State
@@ -185,7 +184,7 @@ export default function App() {
           .eq('staff_id', loginId.trim())
           .eq('pin', loginPass.trim())
           .maybeSingle();
-       if (error || !staff) throw new Error('Staff ID-യോ PIN-ഓ തെറ്റാണ്!');
+       if (error || !staff) throw new Error('Staff ID-à´¯àµ‹ PIN-à´“ à´¤àµ†à´±àµà´±à´¾à´£àµ!');
         const role = (staff.role || 'teacher').toLowerCase();
         const u = { id: staff.staff_id, name: staff.name, role, type: 'staff' };
         localStorage.setItem('nhia_logged_user', JSON.stringify(u));
@@ -201,7 +200,7 @@ export default function App() {
           .eq('adm_no', loginId.trim())
           .eq('pin', loginPass.trim())
           .maybeSingle();
-        if (error || !st) throw new Error('അഡ്മിഷൻ നമ്പറോ PIN-ഓ തെറ്റാണ്!');
+        if (error || !st) throw new Error('à´…à´¡àµà´®à´¿à´·àµ» à´¨à´®àµà´ªà´±àµ‹ PIN-à´“ à´¤àµ†à´±àµà´±à´¾à´£àµ!');
         const u = { id: st.adm_no, name: st.name, role: 'student', class_name: st.class_name, type: 'student' };
         localStorage.setItem('nhia_logged_user', JSON.stringify(u));
         const creds = JSON.parse(localStorage.getItem('nhia_offline_creds') || '{}');
@@ -219,7 +218,7 @@ export default function App() {
         setUser(saved.user);
         setRolePreview(saved.user.role);
       } else {
-        setLoginErr(!navigator.onLine ? 'ഓഫ്‌ലൈനിൽ കയറാൻ ആദ്യം ഒരിക്കൽ ഓൺലൈനിൽ ലോഗിൻ ചെയ്യണം!' : err.message);
+        setLoginErr(!navigator.onLine ? 'à´“à´«àµâ€Œà´²àµˆà´¨à´¿àµ½ à´•à´¯à´±à´¾àµ» à´†à´¦àµà´¯à´‚ à´’à´°à´¿à´•àµà´•àµ½ à´“àµºà´²àµˆà´¨à´¿àµ½ à´²àµ‹à´—à´¿àµ» à´šàµ†à´¯àµà´¯à´£à´‚!' : err.message);
       }
     } finally {
       setLoading(false);
@@ -301,7 +300,7 @@ export default function App() {
 
   async function handleYearReset() {
     const confirmText = window.prompt(
-      `WARNING: ${academicYear}-ലെ പഴയ Attendance, Marks, Finance, Activity, Announcements ഡാറ്റയെല്ലാം ഡിലീറ്റ് ആകും!\n\nകൺഫേം ചെയ്യാൻ "RESET" എന്ന് ടൈപ്പ് ചെയ്യുക:`
+      `WARNING: ${academicYear}-à´²àµ† à´ªà´´à´¯ Attendance, Marks, Finance, Activity, Announcements à´¡à´¾à´±àµà´±à´¯àµ†à´²àµà´²à´¾à´‚ à´¡à´¿à´²àµ€à´±àµà´±àµ à´†à´•àµà´‚!\n\nà´•àµºà´«àµ‡à´‚ à´šàµ†à´¯àµà´¯à´¾àµ» "RESET" à´Žà´¨àµà´¨àµ à´Ÿàµˆà´ªàµà´ªàµ à´šàµ†à´¯àµà´¯àµà´•:`
     );
     if (confirmText !== 'RESET') return;
 
@@ -311,7 +310,7 @@ export default function App() {
       for (const tbl of tablesToReset) {
         await supabase.from(tbl).delete().neq('id', '00000000-0000-0000-0000-000000000000');
       }
-      alert('പഴയ ഡാറ്റയെല്ലാം റീസെറ്റ് ആയി! ഇനി പുതിയ Academic Year സെലക്ട് ചെയ്യാം.');
+      alert('à´ªà´´à´¯ à´¡à´¾à´±àµà´±à´¯àµ†à´²àµà´²à´¾à´‚ à´±àµ€à´¸àµ†à´±àµà´±àµ à´†à´¯à´¿! à´‡à´¨à´¿ à´ªàµà´¤à´¿à´¯ Academic Year à´¸àµ†à´²à´•àµà´Ÿàµ à´šàµ†à´¯àµà´¯à´¾à´‚.');
     } catch (err) {
       alert('Reset error: ' + err.message);
     } finally {
@@ -332,7 +331,7 @@ export default function App() {
             </div>
             <div>
               <div style={{ fontWeight: 800, fontSize: 17, color: '#0f172a' }}>Noorul Hidaya</div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>Islamic Academy • Campus ERP</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>Islamic Academy â€¢ Campus ERP</div>
             </div>
           </div>
 
@@ -374,7 +373,7 @@ export default function App() {
                 required
                 value={loginPass}
                 onChange={e => setLoginPass(e.target.value)}
-                placeholder="••••••••"
+                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
                 style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', marginTop: 6, fontSize: 14 }}
               />
             </div>
@@ -471,11 +470,11 @@ export default function App() {
             <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Academic Year</div>
               <select value={academicYear} onChange={e => handleYearChange(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontWeight: 600 }}>
-                <option value="2025–26">2025–26</option>
-                <option value="2026–27">2026–27</option>
-                <option value="2027–28">2027–28</option>
-                <option value="2028–29">2028–29</option>
-                <option value="2029–30">2029–30</option>
+                <option value="2025â€“26">2025â€“26</option>
+                <option value="2026â€“27">2026â€“27</option>
+                <option value="2027â€“28">2027â€“28</option>
+                <option value="2028â€“29">2028â€“29</option>
+                <option value="2029â€“30">2029â€“30</option>
           </select>
             </div>
 
@@ -603,7 +602,7 @@ export default function App() {
                 return (
                   <button
                     key={item}
-                    onClick={() => alert(`${item} - അടുത്ത ഘട്ടത്തിൽ ഈ പേജ് കണക്ട് ചെയ്യാം!`)}
+                    onClick={() => alert(`${item} - à´…à´Ÿàµà´¤àµà´¤ à´˜à´Ÿàµà´Ÿà´¤àµà´¤à´¿àµ½ à´ˆ à´ªàµ‡à´œàµ à´•à´£à´•àµà´Ÿàµ à´šàµ†à´¯àµà´¯à´¾à´‚!`)}
                     style={{ display: 'flex', alignItems: 'center', gap: 14, background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0', cursor: 'pointer', textAlign: 'left', width: '100%' }}
                   >
                     <div style={{ width: 38, height: 38, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
@@ -631,7 +630,7 @@ export default function App() {
         ) : activeTab === 'notices' ? (
           <div style={{ background: '#fff', padding: 22, borderRadius: 18, border: '1px solid #e2e8f0' }}>
             <h3 style={{ marginBottom: 12 }}>Campus Notices</h3>
-            <p style={{ fontSize: 13, color: '#64748b' }}>പ്രത്യേക അറിയിപ്പുകൾ ഇവിടെ കാണാം.</p>
+            <p style={{ fontSize: 13, color: '#64748b' }}>à´ªàµà´°à´¤àµà´¯àµ‡à´• à´…à´±à´¿à´¯à´¿à´ªàµà´ªàµà´•àµ¾ à´‡à´µà´¿à´Ÿàµ† à´•à´¾à´£à´¾à´‚.</p>
           </div>
         ) : (
           /* HOME SCREEN */
@@ -657,7 +656,6 @@ export default function App() {
               </div>
             </div>
 
-            {currentRole !== 'student' && <ClassSummaryBoard />}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               {visibleModules.map(mod => {
