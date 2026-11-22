@@ -62,6 +62,9 @@ export default function GadgetRegistryModule({ onBack, user }) {
   // Sticker Print Filters
   const [printCat, setPrintCat] = useState('');
   const [printActiveOnly, setPrintActiveOnly] = useState(true);
+  const [printSearch, setPrintSearch] = useState('');
+  const [selectedStickerIds, setSelectedStickerIds] = useState([]);
+  const [customSeal, setCustomSeal] = useState(() => localStorage.getItem('nhia_gadget_seal') || '');
 
   async function loadAll() {
     setLoading(true);
@@ -337,7 +340,7 @@ export default function GadgetRegistryModule({ onBack, user }) {
       ctx.fillStyle = '#777'; ctx.font = 'bold 32px Arial'; ctx.fillText('NHIA', 112, 165);
       drawTextAndSave();
     };
-    im.src = '/logo.jpg';
+    im.src = customSeal || '/logo.jpg';
   }
 
   // Copy Summary Report for WhatsApp
@@ -449,14 +452,54 @@ export default function GadgetRegistryModule({ onBack, user }) {
       .sort((a, b) => String(a.category).localeCompare(String(b.category)) || String(a.id).localeCompare(String(b.id)));
   }, [gadgets, printCat, printActiveOnly]);
 
+  function handleSealUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      setCustomSeal(dataUrl);
+      try { localStorage.setItem('nhia_gadget_seal', dataUrl); } catch {}
+      setMsg('Custom sticker logo updated!');
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function resetSeal() {
+    setCustomSeal('');
+    localStorage.removeItem('nhia_gadget_seal');
+    setMsg('Reset sticker logo to default.');
+  }
+
+  function toggleStickerId(id) {
+    setSelectedStickerIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  }
+
+  const visibleStickerGadgets = useMemo(() => {
+    const term = printSearch.trim().toLowerCase();
+    if (!term) return stickerGadgets;
+    return stickerGadgets.filter(g =>
+      [g.id, g.owner, g.owner_id, g.model, g.category]
+        .some(v => String(v || '').toLowerCase().includes(term))
+    );
+  }, [stickerGadgets, printSearch]);
+
   function printA4Stickers() {
+    const listToPrint = selectedStickerIds.length > 0
+      ? stickerGadgets.filter(g => selectedStickerIds.includes(g.id))
+      : stickerGadgets;
+    if (listToPrint.length === 0) return;
+
+    const sealSrc = customSeal || (window.location.origin + '/logo.jpg');
     const pages = [];
-    for (let i = 0; i < stickerGadgets.length; i += 27) {
-      const slice = stickerGadgets.slice(i, i + 27);
+    for (let i = 0; i < listToPrint.length; i += 27) {
+      const slice = listToPrint.slice(i, i + 27);
       const cards = slice.map(g => `
         <div style="border:0.3mm dashed #64748b;display:flex;align-items:center;gap:2mm;padding:1.5mm;overflow:hidden;box-sizing:border-box;width:60mm;height:30mm;">
           <div style="flex:0 0 22mm;height:22mm;display:flex;align-items:center;justify-content:center;">
-            <img src="${window.location.origin}/logo.jpg" style="max-width:22mm;max-height:22mm;object-fit:contain;" />
+            <img src="${sealSrc}" style="max-width:22mm;max-height:22mm;object-fit:contain;" />
           </div>
           <div style="flex:1;min-width:0;overflow:hidden;line-height:1.2;font-family:Arial,sans-serif;color:#000;">
             <div style="font-weight:800;font-size:8.5pt;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${g.category}</div>
@@ -924,23 +967,119 @@ export default function GadgetRegistryModule({ onBack, user }) {
       {/* TAB 6: ADMIN A4 STICKER PRINT */}
       {tab === 'stickers' && isAdmin && (
         <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
-          <h3 style={{ fontSize: 15, fontWeight: 800, margin: '0 0 10px' }}>A4 Sticker Print Sheet (6cm × 3cm • 27/Page)</h3>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 12 }}>
-            <select value={printCat} onChange={e => setPrintCat(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: 160 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+            <div>
+              <h3 style={{ fontSize: 15, fontWeight: 800, margin: 0 }}>A4 Sticker Print (6cm × 3cm • 27/Page)</h3>
+              <div style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>
+                Tick specific students below to print only their stickers.
+              </div>
+            </div>
+            {/* Custom Seal / Logo Upload */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <img
+                src={customSeal || '/logo.jpg'}
+                alt="Seal"
+                style={{ width: 34, height: 34, borderRadius: 6, border: '1px solid #cbd5e1', objectFit: 'contain', background: '#fff' }}
+              />
+              <label style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #2e44d2', background: '#eff6ff', color: '#2e44d2', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Upload size={12} /> Change Logo
+                <input type="file" accept="image/*" onChange={handleSealUpload} style={{ display: 'none' }} />
+              </label>
+              {customSeal && (
+                <button onClick={resetSeal} style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                  Reset
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Filters & Print Button */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+            <input
+              value={printSearch}
+              onChange={e => setPrintSearch(e.target.value)}
+              placeholder="Search student, ID, model..."
+              style={{ ...inputStyle, flex: '1 1 160px' }}
+            />
+            <select value={printCat} onChange={e => setPrintCat(e.target.value)} style={{ ...inputStyle, width: 'auto', minWidth: 140 }}>
               <option value="">All Categories</option>
               {existingCategories.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <label style={{ fontSize: 12.5, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+            <label style={{ fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
               <input type="checkbox" checked={printActiveOnly} onChange={e => setPrintActiveOnly(e.target.checked)} />
               Active Only
             </label>
-            <button onClick={printA4Stickers} disabled={stickerGadgets.length === 0} style={{ padding: '8px 14px', borderRadius: 9, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Printer size={14} /> Print A4 Sheet ({stickerGadgets.length} Stickers)
+          </div>
+
+          {/* Select All / Clear / Print Action Bar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8, padding: '8px 10px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0', marginBottom: 10 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setSelectedStickerIds(visibleStickerGadgets.map(g => g.id))}
+                style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+              >
+                Select All ({visibleStickerGadgets.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedStickerIds([])}
+                style={{ padding: '5px 10px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}
+              >
+                Clear
+              </button>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#2e44d2', marginLeft: 4 }}>
+                {selectedStickerIds.length > 0 ? `${selectedStickerIds.length} Selected` : `All ${stickerGadgets.length} Ready`}
+              </span>
+            </div>
+
+            <button
+              onClick={printA4Stickers}
+              disabled={stickerGadgets.length === 0}
+              style={{ padding: '8px 14px', borderRadius: 9, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 800, fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}
+            >
+              <Printer size={14} />
+              {selectedStickerIds.length > 0
+                ? `Print Selected (${selectedStickerIds.length})`
+                : `Print All (${stickerGadgets.length})`}
             </button>
           </div>
-          <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
-            Ready to print <b>{stickerGadgets.length}</b> sticker(s) across <b>{Math.max(1, Math.ceil(stickerGadgets.length / 27))}</b> A4 page(s). Cut along the dashed lines.
-          </p>
+
+          {/* Student / Gadget Checklist */}
+          <div style={{ maxHeight: 340, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: 10 }}>
+            {visibleStickerGadgets.length === 0 ? (
+              <p style={{ textAlign: 'center', fontSize: 12.5, color: '#64748b', padding: 16 }}>No gadgets match your filter.</p>
+            ) : (
+              visibleStickerGadgets.map((g, idx) => {
+                const checked = selectedStickerIds.includes(g.id);
+                return (
+                  <label
+                    key={g.id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px',
+                      borderBottom: idx < visibleStickerGadgets.length - 1 ? '1px solid #f1f5f9' : 'none',
+                      background: checked ? '#eff6ff' : '#fff', cursor: 'pointer'
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleStickerId(g.id)}
+                      style={{ width: 16, height: 16, cursor: 'pointer' }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>
+                        {g.owner} {g.owner_id ? `(${g.owner_id})` : ''} — <span style={{ color: '#2e44d2' }}>{g.id}</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>
+                        {g.category} • {g.type} ({g.model}) • C/o: {g.custodian}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })
+            )}
+          </div>
         </div>
       )}
     </div>
