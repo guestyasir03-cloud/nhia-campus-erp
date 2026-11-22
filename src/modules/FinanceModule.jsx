@@ -261,8 +261,7 @@ export default function FinanceModule({ onBack, user }) {
 
   const ExportBar = ({ onPDF, onJPEG, onExcel }) => (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-      <div style={{ display: 'flex', gap: 5, alignItems: 'stretch' }}>
-                      <button onClick={onPDF} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+      <button onClick={onPDF} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
         <Download size={14} /> PDF
       </button>
       <button onClick={onJPEG} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
@@ -448,6 +447,7 @@ export default function FinanceModule({ onBack, user }) {
                     />
                   </div>
                   <div style={{ paddingTop: 14 }}>
+                    <div style={{ display: 'flex', gap: 5, alignItems: 'stretch' }}>
                     <button
                       type="button"
                       onClick={() => handleQuickPayOneMonth(s)}
