@@ -703,13 +703,15 @@ export default function AttendanceModule({ onBack, user }) {
                               >
                                 <Download size={11} /> PDF
                               </button>
-                              <button
+                              {user?.role === 'admin' && (
+                                <button
                                 onClick={() => deleteSessionGroup(sg)}
                                 title="Delete entire session"
                                 style={{ padding: '4px 7px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                               >
                                 <Trash2 size={12} />
                               </button>
+                              )}
                   </div>
                 </>
               )}
@@ -808,13 +810,15 @@ export default function AttendanceModule({ onBack, user }) {
                                 >
                                   Edit
                                 </button>
-                                  <button
+                                  {user?.role === 'admin' && (
+                                    <button
                                     onClick={() => deleteClassSession(sg, c)}
                                     title="Delete this class attendance"
                                     style={{ padding: '6px 8px', borderRadius: 7, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                                   >
                                     <Trash2 size={13} />
                                   </button>
+                                  )}
                                 </div>
                               </div>
                             ))}
