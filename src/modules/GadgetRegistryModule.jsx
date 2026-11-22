@@ -340,7 +340,7 @@ export default function GadgetRegistryModule({ onBack, user }) {
       ctx.fillStyle = '#777'; ctx.font = 'bold 32px Arial'; ctx.fillText('NHIA', 112, 165);
       drawTextAndSave();
     };
-    im.src = customSeal || '/logo.jpg';
+    im.src = customSeal || '/seal.png';
   }
 
   // Copy Summary Report for WhatsApp
@@ -492,7 +492,7 @@ export default function GadgetRegistryModule({ onBack, user }) {
       : stickerGadgets;
     if (listToPrint.length === 0) return;
 
-    const sealSrc = customSeal || (window.location.origin + '/logo.jpg');
+    const sealSrc = customSeal || (window.location.origin + '/seal.png');
     const pages = [];
     for (let i = 0; i < listToPrint.length; i += 27) {
       const slice = listToPrint.slice(i, i + 27);
@@ -977,7 +977,7 @@ export default function GadgetRegistryModule({ onBack, user }) {
             {/* Custom Seal / Logo Upload */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <img
-                src={customSeal || '/logo.jpg'}
+                src={customSeal || '/seal.png'}
                 alt="Seal"
                 style={{ width: 34, height: 34, borderRadius: 6, border: '1px solid #cbd5e1', objectFit: 'contain', background: '#fff' }}
               />
