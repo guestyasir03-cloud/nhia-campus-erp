@@ -1,4 +1,5 @@
-﻿import ClassSummaryBoard from '../components/ClassSummaryBoard';
+﻿import StudentQuickLookup from '../components/StudentQuickLookup';
+import ClassSummaryBoard from '../components/ClassSummaryBoard';
 import React, { useState, useEffect } from 'react';
 import {
   ChevronLeft, Users, UserPlus, Upload, ArrowUpCircle,
@@ -296,6 +297,7 @@ export default function StudentsModule({ onBack, user }) {
       <div>
         <Header title="Students" backAction={onBack} />
         <ClassSummaryBoard />
+        <StudentQuickLookup />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
             { id: 'directory', label: 'Student directory', icon: Users },
@@ -548,3 +550,4 @@ export default function StudentsModule({ onBack, user }) {
     </div>
   );
 }
+
