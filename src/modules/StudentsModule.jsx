@@ -479,7 +479,7 @@ export default function StudentsModule({ onBack, user }) {
             <>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 <button onClick={() => autoAssignRoll('name')} style={{ padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
-                  Auto-Assign (Aâ€“Z)
+                  Auto-Assign (A–Z)
                 </button>
                 <button onClick={() => autoAssignRoll('adm')} style={{ padding: 10, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff', fontWeight: 700, fontSize: 12, color: '#1e293b', cursor: 'pointer' }}>
                   Auto-Assign (Adm No)
