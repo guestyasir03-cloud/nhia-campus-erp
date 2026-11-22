@@ -261,7 +261,8 @@ export default function FinanceModule({ onBack, user }) {
 
   const ExportBar = ({ onPDF, onJPEG, onExcel }) => (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-      <button onClick={onPDF} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+      <div style={{ display: 'flex', gap: 5, alignItems: 'stretch' }}>
+                      <button onClick={onPDF} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
         <Download size={14} /> PDF
       </button>
       <button onClick={onJPEG} style={{ padding: '11px 6px', borderRadius: 10, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
@@ -454,6 +455,19 @@ export default function FinanceModule({ onBack, user }) {
                     >
                       <Plus size={13} /> 1 Mo
                     </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUndoOneMonth(s)}
+                        title="Undo last paid month & delete receipt"
+                        style={{
+                          padding: '8px 9px', borderRadius: 8, border: '1px solid #fecaca',
+                          background: '#fef2f2', color: '#dc2626', fontWeight: 800,
+                          fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap'
+                        }}
+                      >
+                        Undo
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
