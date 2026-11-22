@@ -276,25 +276,32 @@ export default function AttendanceModule({ onBack, user }) {
 
     const grandPerc = sg.total > 0 ? ((sg.P / sg.total) * 100).toFixed(1) : '0.0';
     let text = `*NOORUL HIDAYA ISLAMIC ACADEMY*\n`;
-    text += `*Detailed Attendance Report — ${sg.session}*\n`;
-    text += `Date: ${sg.date} | Classes: ${sg.classes.length}\n`;
-    text += `--------------------------------\n`;
+    text += `📋 *Attendance Report — ${sg.session}*\n`;
+    text += `📅 Date: ${sg.date}  |  🏫 Classes: ${sg.classes.length}\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━\n`;
     text += `*GRAND TOTAL:* ${sg.total} Students\n`;
-    text += `Present: ${sg.P} (${grandPerc}%) | Absent: ${sg.A} | Leave: ${sg.L}\n`;
-    text += `--------------------------------\n\n`;
+    text += `✅ Present: *${sg.P}* (${grandPerc}%)\n`;
+    text += `❌ Absent: *${sg.A}*  |  🟡 Leave: *${sg.L}*\n`;
+    text += `━━━━━━━━━━━━━━━━━━━━\n\n`;
 
     sg.classes.forEach((c, idx) => {
       const cPerc = c.total > 0 ? ((c.P / c.total) * 100).toFixed(1) : '0.0';
       const d = details[c.className] || { A: [], L: [] };
-      text += `*${idx + 1}. Class ${c.className}* (Teacher: ${c.takenBy})\n`;
+      text += `*${idx + 1}. Class ${c.className}* (_${c.takenBy}_)\n`;
       text += `   Total: ${c.total} | P: ${c.P} (${cPerc}%) | A: ${c.A} | L: ${c.L}\n`;
-      if (d.A.length > 0) text += `   Absent: ${d.A.join(', ')}\n`;
-      if (d.L.length > 0) text += `   Leave: ${d.L.join(', ')}\n`;
+      if (d.A.length > 0) {
+        text += `   ❌ *Absent (${d.A.length}):*\n`;
+        d.A.forEach((name, i) => { text += `      ${i + 1}. ${name}\n`; });
+      }
+      if (d.L.length > 0) {
+        text += `   🟡 *Leave (${d.L.length}):*\n`;
+        d.L.forEach((name, i) => { text += `      ${i + 1}. ${name}\n`; });
+      }
       text += `\n`;
     });
 
     navigator.clipboard.writeText(text.trim());
-    setMsg(`Copied detailed WhatsApp report for ${sg.session} (${sg.date}).`);
+    setMsg(`Copied neat WhatsApp report for ${sg.session} (${sg.date}).`);
   }
 
   async function downloadCombinedSessionPDF(sg) {
@@ -306,11 +313,11 @@ export default function AttendanceModule({ onBack, user }) {
 
     const classRowsHtml = sg.classes.map((c, idx) => {
       const cPerc = c.total > 0 ? ((c.P / c.total) * 100).toFixed(1) : '0.0';
-      return `<tr>
+      return `<tr style="background:${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
         <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${idx + 1}</td>
         <td style="border:1px solid #cbd5e1;padding:6px;font-weight:700;">${c.className}</td>
         <td style="border:1px solid #cbd5e1;padding:6px;">${c.takenBy}</td>
-        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;">${c.total}</td>
+        <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;font-weight:600;">${c.total}</td>
         <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;color:#15803d;font-weight:700;">${c.P}</td>
         <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;color:#dc2626;font-weight:700;">${c.A}</td>
         <td style="border:1px solid #cbd5e1;padding:6px;text-align:center;color:#d97706;font-weight:700;">${c.L}</td>
@@ -321,49 +328,74 @@ export default function AttendanceModule({ onBack, user }) {
     const absLeaveBlocks = sg.classes.map(c => {
       const d = details[c.className] || { A: [], L: [] };
       if (d.A.length === 0 && d.L.length === 0) return '';
-      return `<div style="margin-bottom:8px;padding:8px 10px;border:1px solid #e2e8f0;border-radius:6px;background:#f8fafc;">
-        <div style="font-weight:700;font-size:12px;color:#0f172a;margin-bottom:4px;">Class ${c.className} — ${c.takenBy}</div>
-        ${d.A.length > 0 ? `<div style="font-size:11px;color:#dc2626;margin-bottom:2px;"><b>Absent (${d.A.length}):</b> ${d.A.join(', ')}</div>` : ''}
-        ${d.L.length > 0 ? `<div style="font-size:11px;color:#b45309;"><b>Leave (${d.L.length}):</b> ${d.L.join(', ')}</div>` : ''}
+      return `<div style="page-break-inside:avoid;margin-bottom:10px;border:1px solid #cbd5e1;border-radius:6px;overflow:hidden;">
+        <div style="background:#f1f5f9;padding:6px 10px;font-weight:700;font-size:12px;color:#0f172a;border-bottom:1px solid #cbd5e1;display:flex;justify-content:space-between;">
+          <span>Class ${c.className} — ${c.takenBy}</span>
+          <span>P: ${c.P} | A: ${c.A} | L: ${c.L}</span>
+        </div>
+        <div style="padding:8px 10px;font-size:11px;line-height:1.5;">
+          ${d.A.length > 0 ? `<div style="margin-bottom:4px;"><b style="color:#dc2626;">Absent (${d.A.length}):</b> ${d.A.map((n, i) => `${i + 1}) ${n}`).join(' &nbsp;•&nbsp; ')}</div>` : ''}
+          ${d.L.length > 0 ? `<div><b style="color:#b45309;">Leave (${d.L.length}):</b> ${d.L.map((n, i) => `${i + 1}) ${n}`).join(' &nbsp;•&nbsp; ')}</div>` : ''}
+        </div>
       </div>`;
     }).join('');
 
     const container = document.createElement('div');
     container.innerHTML = `
-      <div style="padding:18px;font-family:Arial,sans-serif;color:#0f172a;">
-        <div style="text-align:center;border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px;">
-          <div style="font-size:18px;font-weight:800;">NOORUL HIDAYA ISLAMIC ACADEMY, PATTAMBI</div>
-          <div style="font-size:13px;font-weight:700;color:#334155;margin-top:3px;">Detailed Attendance Report — ${sg.session}</div>
-          <div style="font-size:11px;color:#64748b;margin-top:2px;">Date: ${sg.date} &nbsp;|&nbsp; Total Classes: ${sg.classes.length}</div>
+      <div style="padding:20px;font-family:Arial,sans-serif;color:#0f172a;border:1.5px solid #0f172a;">
+        <div style="position:relative;text-align:center;border-bottom:2px solid #0f172a;padding-bottom:10px;margin-bottom:14px;min-height:52px;">
+          <img src="/logo.jpg" style="position:absolute;left:4px;top:0;width:48px;height:48px;object-fit:contain;" />
+          <div style="font-size:17px;font-weight:800;letter-spacing:0.3px;">NOORUL HIDAYA ISLAMIC ACADEMY, PATTAMBI</div>
+          <div style="font-size:13px;font-weight:700;color:#1e293b;margin-top:2px;">Detailed Attendance Report — ${sg.session}</div>
+          <div style="font-size:11px;color:#475569;margin-top:2px;">Date: <b>${sg.date}</b> &nbsp;|&nbsp; Total Classes: <b>${sg.classes.length}</b></div>
         </div>
 
-        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+        <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:14px;text-align:center;">
+          <div style="flex:1;padding:8px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;">
+            <div style="font-size:10px;color:#64748b;font-weight:700;">TOTAL</div>
+            <div style="font-size:16px;font-weight:800;">${sg.total}</div>
+          </div>
+          <div style="flex:1;padding:8px;border:1px solid #bbf7d0;border-radius:6px;background:#f0fdf4;">
+            <div style="font-size:10px;color:#15803d;font-weight:700;">PRESENT</div>
+            <div style="font-size:16px;font-weight:800;color:#15803d;">${sg.P} (${grandPerc}%)</div>
+          </div>
+          <div style="flex:1;padding:8px;border:1px solid #fecaca;border-radius:6px;background:#fef2f2;">
+            <div style="font-size:10px;color:#dc2626;font-weight:700;">ABSENT</div>
+            <div style="font-size:16px;font-weight:800;color:#dc2626;">${sg.A}</div>
+          </div>
+          <div style="flex:1;padding:8px;border:1px solid #fde68a;border-radius:6px;background:#fffbeb;">
+            <div style="font-size:10px;color:#b45309;font-weight:700;">LEAVE</div>
+            <div style="font-size:16px;font-weight:800;color:#b45309;">${sg.L}</div>
+          </div>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:16px;">
           <thead>
-            <tr style="background:#f1f5f9;">
-              <th style="border:1px solid #cbd5e1;padding:7px;">#</th>
-              <th style="border:1px solid #cbd5e1;padding:7px;text-align:left;">Class</th>
-              <th style="border:1px solid #cbd5e1;padding:7px;text-align:left;">Teacher Taken</th>
-              <th style="border:1px solid #cbd5e1;padding:7px;">Total</th>
-              <th style="border:1px solid #cbd5e1;padding:7px;">Present</th>
-              <th style="border:1px solid #cbd5e1;padding:7px;">Absent</th>
-              <th style="border:1px solid #cbd5e1;padding:7px;">Leave</th>
-              <th style="border:1px solid #cbd5e1;padding:7px;">%</th>
+            <tr style="background:#0f172a;color:#ffffff;">
+              <th style="border:1px solid #0f172a;padding:7px;width:30px;">#</th>
+              <th style="border:1px solid #0f172a;padding:7px;text-align:left;">Class</th>
+              <th style="border:1px solid #0f172a;padding:7px;text-align:left;">Teacher Taken</th>
+              <th style="border:1px solid #0f172a;padding:7px;">Total</th>
+              <th style="border:1px solid #0f172a;padding:7px;">Present</th>
+              <th style="border:1px solid #0f172a;padding:7px;">Absent</th>
+              <th style="border:1px solid #0f172a;padding:7px;">Leave</th>
+              <th style="border:1px solid #0f172a;padding:7px;">%</th>
             </tr>
           </thead>
           <tbody>
             ${classRowsHtml}
-            <tr style="background:#eef2ff;font-weight:800;">
+            <tr style="background:#e2e8f0;font-weight:800;">
               <td colspan="3" style="border:1px solid #cbd5e1;padding:7px;text-align:right;">GRAND TOTAL</td>
               <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;">${sg.total}</td>
               <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;color:#15803d;">${sg.P}</td>
               <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;color:#dc2626;">${sg.A}</td>
-              <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;color:#d97706;">${sg.L}</td>
+              <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;color:#b45309;">${sg.L}</td>
               <td style="border:1px solid #cbd5e1;padding:7px;text-align:center;">${grandPerc}%</td>
             </tr>
           </tbody>
         </table>
 
-        ${absLeaveBlocks ? `<div style="font-size:13px;font-weight:800;margin-bottom:8px;color:#0f172a;">Absent & Leave Details</div>${absLeaveBlocks}` : ''}
+        ${absLeaveBlocks ? `<div style="font-size:13px;font-weight:800;margin-bottom:8px;color:#0f172a;border-bottom:1px solid #cbd5e1;padding-bottom:4px;">Absent & Leave Student List</div>${absLeaveBlocks}` : ''}
       </div>
     `;
 
@@ -720,25 +752,18 @@ export default function AttendanceModule({ onBack, user }) {
                             </div>
                             <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
                               <button
-                                onClick={() => copyCombinedSessionReport(sg)}
-                                title="Copy Combined WhatsApp Report"
-                                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                                onClick={() => downloadCombinedSessionPDF(sg)}
+                                title="Download Detailed PDF Report"
+                                style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#dc2626', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
                               >
-                                <Copy size={11} /> Copy
+                                <Download size={11} /> PDF
                               </button>
                               <button
-                                onClick={() => downloadCSV(
-                                  `NHIA_${sg.session}_${sg.date}.csv`,
-                                  ['Class', 'Taken By', 'Present', 'Absent', 'Leave', 'Total'],
-                                  [
-                                    ...sg.classes.map(c => [c.className, c.takenBy, c.P, c.A, c.L, c.total]),
-                                    ['GRAND TOTAL', `${sg.classes.length} Classes`, sg.P, sg.A, sg.L, sg.total]
-                                  ]
-                                )}
-                                title="Download Combined Excel"
-                                style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#10b981', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                                onClick={() => deleteSessionGroup(sg)}
+                                title="Delete entire session"
+                                style={{ padding: '4px 7px', borderRadius: 6, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                               >
-                                <FileSpreadsheet size={11} /> Excel
+                                <Trash2 size={12} />
                               </button>
                             </div>
                           </div>
