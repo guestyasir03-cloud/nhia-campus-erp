@@ -98,6 +98,7 @@ export default function LeaveModule({ user, onBack }) {
   const [reportView, setReportView] = useState('folders'); // 'folders' | 'table'
   const [openReportDates, setOpenReportDates] = useState({});
   const [insightSearch, setInsightSearch] = useState('');
+  const [expandedLeaveClass, setExpandedLeaveClass] = useState(null);
   const [selectedStudentReport, setSelectedStudentReport] = useState(null);
 
   useEffect(() => {
@@ -1063,13 +1064,63 @@ export default function LeaveModule({ user, onBack }) {
               </div>
 
               <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>Class-wise Total Leave Duration</div>
-                {insights.classRows.map(([cls, hrs]) => (
-                  <div key={cls} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
-                    <span style={{ fontWeight: 600 }}>{cls}</span>
-                    <span style={{ fontWeight: 800, color: '#dc2626' }}>{formatDuration(hrs)}</span>
-                  </div>
-                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Class-wise Total Leave Duration</div>
+                  <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Tap class to view students</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {insights.classRows.map(([cls, hrs]) => {
+                    const isOpen = expandedLeaveClass === cls;
+                    const classStudents = insights.studentRows
+                      .filter(s => s.class_name === cls)
+                      .sort((a, b) => (b.totalHours || 0) - (a.totalHours || 0));
+                    return (
+                      <div key={cls} style={{ border: isOpen ? '1.5px solid #2e44d2' : '1px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', background: '#fff' }}>
+                        <div
+                          onClick={() => setExpandedLeaveClass(isOpen ? null : cls)}
+                          style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 12px', background: isOpen ? '#eff6ff' : '#f8fafc', cursor: 'pointer', fontSize: 13 }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontWeight: 800, color: '#0f172a' }}>{cls}</span>
+                            <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>({classStudents.length} student{classStudents.length !== 1 ? 's' : ''})</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontWeight: 800, color: '#dc2626' }}>{formatDuration(hrs)}</span>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: '#2e44d2' }}>{isOpen ? '▲' : '▼'}</span>
+                          </div>
+                        </div>
+                        {isOpen && (
+                          <div style={{ padding: '4px 12px 8px', borderTop: '1px solid #e2e8f0', background: '#fff' }}>
+                            {classStudents.length === 0 ? (
+                              <div style={{ fontSize: 12, color: '#64748b', padding: '8px 0', textAlign: 'center' }}>No leave records.</div>
+                            ) : (
+                              classStudents.map((s, idx) => (
+                                <div
+                                  key={s.adm_no}
+                                  onClick={() => setSelectedStudentReport(s)}
+                                  style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    padding: '8px 2px',
+                                    borderBottom: idx < classStudents.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                    cursor: 'pointer', fontSize: 12
+                                  }}
+                                >
+                                  <div>
+                                    <div style={{ fontWeight: 700, color: '#0f172a' }}>{idx + 1}. {s.name}</div>
+                                    <div style={{ fontSize: 11, color: '#64748b' }}>Adm: {s.adm_no} • {s.count} Leave{s.count !== 1 ? 's' : ''}</div>
+                                  </div>
+                                  <span style={{ fontWeight: 800, color: '#dc2626', background: '#fef2f2', padding: '3px 8px', borderRadius: 7, fontSize: 11.5 }}>
+                                    {formatDuration(s.totalHours)} →
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0' }}>
