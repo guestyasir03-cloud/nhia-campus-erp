@@ -109,6 +109,9 @@ export default function FinanceModule({ onBack, user }) {
 
   async function handleQuickPayOneMonth(s) {
     const amt = Number(amountMap[s.adm_no]) || 0;
+    if (amt <= 0) {
+      return alert(`First set the Monthly Donation amount (> ₹0) for ${s.name}, then use +1 Mo.`);
+    }
     const currentLP = lastPaidMap[s.adm_no];
     if (!currentLP) {
       return alert(`First set the Last Paid Month for ${s.name}, then use +1 Mo.`);
@@ -144,9 +147,24 @@ export default function FinanceModule({ onBack, user }) {
     }));
 
     const { error } = await supabase.from('students').upsert(updates, { onConflict: 'adm_no' });
+    if (!error) {
+      // Clean up ₹0 receipts and any receipts newer than each student's Last Paid Month
+      await supabase.from('donation_receipts').delete().eq('class_name', selectedClass).lte('amount', 0);
+      await Promise.all(
+        updates
+          .filter(u => u.last_paid_month)
+          .map(u =>
+            supabase
+              .from('donation_receipts')
+              .delete()
+              .eq('adm_no', u.adm_no)
+              .gt('month_paid', u.last_paid_month)
+          )
+      );
+    }
     setLoading(false);
     if (error) setMsg('Error: ' + error.message);
-    else setMsg(`Saved monthly amounts & last paid status for ${selectedClass}.`);
+    else setMsg(`Saved & synced monthly amounts and payment history for ${selectedClass}.`);
   }
 
   async function generateCampusSummary() {
