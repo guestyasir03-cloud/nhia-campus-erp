@@ -38,6 +38,7 @@ export default function AttendanceModule({ onBack, user }) {
   const [spotStudents, setSpotStudents] = useState([]);
   const [spotMap, setSpotMap] = useState({});
   const [historyList, setHistoryList] = useState([]);
+  const [expandedSession, setExpandedSession] = useState(null);
 
   // Monthly Ledger State
   const [monthYear, setMonthYear] = useState(() => new Date().toISOString().slice(0, 7));
@@ -195,28 +196,66 @@ export default function AttendanceModule({ onBack, user }) {
       .from('spot_attendance')
       .select('session_date, session_name, class_name, status, taken_by')
       .order('session_date', { ascending: false })
-      .limit(1000);
+      .limit(2500);
 
     setLoading(false);
     if (error) return setMsg('Error: ' + error.message);
 
-    const grouped = {};
+    const sessionGroups = {};
     (data || []).forEach(r => {
-      const key = `${r.session_date}__${r.session_name}__${r.class_name}`;
-      if (!grouped[key]) {
-        grouped[key] = {
+      const sKey = `${r.session_date}__${r.session_name}`;
+      if (!sessionGroups[sKey]) {
+        sessionGroups[sKey] = {
+          key: sKey,
+          date: r.session_date,
+          session: r.session_name,
+          P: 0, A: 0, L: 0, total: 0,
+          classMap: {}
+        };
+      }
+      const sg = sessionGroups[sKey];
+      sg[r.status] = (sg[r.status] || 0) + 1;
+      sg.total += 1;
+
+      if (!sg.classMap[r.class_name]) {
+        sg.classMap[r.class_name] = {
           date: r.session_date,
           session: r.session_name,
           className: r.class_name,
-          takenBy: r.taken_by,
+          takenBy: r.taken_by || 'Staff',
           P: 0, A: 0, L: 0, total: 0
         };
       }
-      grouped[key][r.status] = (grouped[key][r.status] || 0) + 1;
-      grouped[key].total += 1;
+      sg.classMap[r.class_name][r.status] = (sg.classMap[r.class_name][r.status] || 0) + 1;
+      sg.classMap[r.class_name].total += 1;
     });
 
-    setHistoryList(Object.values(grouped));
+    const groupedList = Object.values(sessionGroups).map(sg => ({
+      key: sg.key,
+      date: sg.date,
+      session: sg.session,
+      P: sg.P,
+      A: sg.A,
+      L: sg.L,
+      total: sg.total,
+      classes: Object.values(sg.classMap).sort((a, b) =>
+        a.className.localeCompare(b.className, undefined, { numeric: true, sensitivity: 'base' })
+      )
+    }));
+
+    setHistoryList(groupedList);
+  }
+
+  function copyCombinedSessionReport(sg) {
+    let text = `NOORUL HIDAYA ISLAMIC ACADEMY\n`;
+    text += `Attendance Report — ${sg.session}\n`;
+    text += `Date: ${sg.date} | Classes: ${sg.classes.length}\n`;
+    text += `Grand Total: P: ${sg.P} | A: ${sg.A} | L: ${sg.L} (Total: ${sg.total})\n\n`;
+    sg.classes.forEach(c => {
+      text += `• ${c.className} (${c.takenBy}): P:${c.P} A:${c.A} L:${c.L}\n`;
+    });
+    navigator.clipboard.writeText(text);
+    setMsg(`Copied combined report for ${sg.session} (${sg.date}).`);
   }
 
   function openForEdit(h) {
@@ -484,25 +523,104 @@ export default function AttendanceModule({ onBack, user }) {
             </>
           ) : (
             <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', padding: 14 }}>
-              <h4 style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>Recent Attendance Sessions</h4>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 800, margin: 0, color: '#0f172a' }}>Grouped Attendance Sessions</h4>
+                <span style={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Tap card to view classes</span>
+              </div>
               {historyList.length === 0 ? (
                 <p style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 16 }}>No attendance records found.</p>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {historyList.map((h, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 10, border: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{h.className} — {h.session}</div>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{h.date} • {h.takenBy}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, display: 'flex', gap: 8 }}>
-                          <span style={{ color: '#16a34a' }}>P: {h.P}</span>
-                          <span style={{ color: '#dc2626' }}>A: {h.A}</span>
-                          <span style={{ color: '#d97706' }}>L: {h.L}</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {historyList.map((sg) => {
+                    const isOpen = expandedSession === sg.key;
+                    return (
+                      <div key={sg.key} style={{ borderRadius: 12, border: isOpen ? '1.5px solid #0284c7' : '1px solid #e2e8f0', background: '#fff', overflow: 'hidden' }}>
+                        {/* Grouped Session Header */}
+                        <div
+                          onClick={() => setExpandedSession(isOpen ? null : sg.key)}
+                          style={{ padding: 12, background: isOpen ? '#f0f9ff' : '#f8fafc', cursor: 'pointer' }}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                            <div>
+                              <div style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{sg.session}</div>
+                              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                                {sg.date} • <b>{sg.classes.length} Class{sg.classes.length > 1 ? 'es' : ''}</b>
+                              </div>
+                            </div>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: '#0284c7', background: '#e0f2fe', padding: '4px 9px', borderRadius: 8 }}>
+                              {isOpen ? 'Hide ▲' : 'Details ▼'}
+                            </span>
+                          </div>
+
+                          {/* Grand Total Badges */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTop: '1px solid #e2e8f0' }}>
+                            <div style={{ display: 'flex', gap: 10, fontSize: 12, fontWeight: 800 }}>
+                              <span style={{ color: '#16a34a' }}>P: {sg.P}</span>
+                              <span style={{ color: '#dc2626' }}>A: {sg.A}</span>
+                              <span style={{ color: '#d97706' }}>L: {sg.L}</span>
+                              <span style={{ color: '#475569' }}>Total: {sg.total}</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }} onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => copyCombinedSessionReport(sg)}
+                                title="Copy Combined WhatsApp Report"
+                                style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', background: '#fff', color: '#0f172a', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                              >
+                                <Copy size={11} /> Copy
+                              </button>
+                              <button
+                                onClick={() => downloadCSV(
+                                  `NHIA_${sg.session}_${sg.date}.csv`,
+                                  ['Class', 'Taken By', 'Present', 'Absent', 'Leave', 'Total'],
+                                  [
+                                    ...sg.classes.map(c => [c.className, c.takenBy, c.P, c.A, c.L, c.total]),
+                                    ['GRAND TOTAL', `${sg.classes.length} Classes`, sg.P, sg.A, sg.L, sg.total]
+                                  ]
+                                )}
+                                title="Download Combined Excel"
+                                style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#10b981', color: '#fff', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
+                              >
+                                <FileSpreadsheet size={11} /> Excel
+                              </button>
+                            </div>
+                          </div>
                         </div>
+
+                        {/* Expanded Class-wise Breakdown */}
+                        {isOpen && (
+                          <div style={{ padding: '6px 12px 10px', borderTop: '1px solid #e2e8f0', background: '#fff' }}>
+                            {sg.classes.map((c, idx) => (
+                              <div
+                                key={c.className}
+                                style={{
+                                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  padding: '8px 4px',
+                                  borderBottom: idx < sg.classes.length - 1 ? '1px solid #f1f5f9' : 'none'
+                                }}
+                              >
+                                <div>
+                                  <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>
+                                    {c.className} <span style={{ fontSize: 11, fontWeight: 500, color: '#64748b' }}>• {c.takenBy}</span>
+                                  </div>
+                                  <div style={{ fontSize: 11, fontWeight: 700, marginTop: 2, display: 'flex', gap: 8 }}>
+                                    <span style={{ color: '#16a34a' }}>P: {c.P}</span>
+                                    <span style={{ color: '#dc2626' }}>A: {c.A}</span>
+                                    <span style={{ color: '#d97706' }}>L: {c.L}</span>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => openForEdit(c)}
+                                  style={{ padding: '6px 12px', borderRadius: 7, border: 'none', background: '#0284c7', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
+                                >
+                                  Edit
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      <button onClick={() => openForEdit(h)} style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: '#0284c7', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}>Edit</button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
