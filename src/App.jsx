@@ -17,6 +17,7 @@ import StaffModule from './modules/StaffModule';
 import UserPasswordsPanel from './components/UserPasswordsPanel';
 import ReportsModule from './modules/ReportsModule';
 import LeaveModule from './modules/LeaveModule';
+import ChangePasswordBox from './components/ChangePasswordBox';
 import YearResetPanel from './components/YearResetPanel';
 const ICON_MAP = {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
@@ -618,6 +619,7 @@ export default function App() {
             <h3 style={{ marginBottom: 12 }}>My Account</h3>
             <p style={{ fontSize: 14, color: '#475569', marginBottom: 6 }}><b>Name:</b> {user.name}</p>
             <p style={{ fontSize: 14, color: '#475569', marginBottom: 18 }}><b>Role:</b> {formatRoleLabel(currentRole)}</p>
+            <ChangePasswordBox user={user} />
             <button
               onClick={async () => { localStorage.removeItem('nhia_logged_user'); if (isSupabaseConfigured && navigator.onLine) await supabase.auth.signOut(); setUser(null); setActiveTab('home'); }}
               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: 12, borderRadius: 12, border: 'none', background: '#ef4444', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
