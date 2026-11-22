@@ -17,6 +17,7 @@ import StaffModule from './modules/StaffModule';
 import UserPasswordsPanel from './components/UserPasswordsPanel';
 import ReportsModule from './modules/ReportsModule';
 import LeaveModule from './modules/LeaveModule';
+import GadgetRegistryModule from './modules/GadgetRegistryModule';
 import ChangePasswordBox from './components/ChangePasswordBox';
 import YearResetPanel from './components/YearResetPanel';
 const ICON_MAP = {
@@ -30,6 +31,7 @@ const DEFAULT_MODULES = [
   { id: 'examinations', name: 'Examinations', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'attendance', name: 'Attendance', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'leave', name: 'Leave Portal', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
+    { id: 'gadgets', name: 'Gadget Registry', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'students', name: 'Students', icon: 'Users', visible_roles: ['admin', 'coordinator', 'teacher'], is_active: true },
   { id: 'finance', name: 'Finance', icon: 'Wallet', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'activity', name: 'Activity Points', icon: 'Star', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
