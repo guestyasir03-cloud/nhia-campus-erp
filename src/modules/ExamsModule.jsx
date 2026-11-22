@@ -260,33 +260,130 @@ export default function ExamsModule({ onBack, user }) {
     setLoading(false);
   }
 
-  async function fetchGradeCard(admNoParam) {
+    async function fetchGradeCard(admNoParam) {
     const targetAdm = (admNoParam || admInput).trim();
     if (!targetAdm) return alert('അഡ്മിഷൻ നമ്പർ നൽകുക!');
     setLoading(true);
     setMsg('');
 
-    const [{ data: st }, { data: mk }] = await Promise.all([
+    const [
+      { data: st },
+      { data: mk },
+      { data: allStudents },
+      { data: allMarks },
+      { data: attData }
+    ] = await Promise.all([
       supabase.from('students').select('*').eq('adm_no', targetAdm).maybeSingle(),
-      supabase.from('marks').select('*').eq('adm_no', targetAdm)
+      supabase.from('marks').select('*').eq('adm_no', targetAdm),
+      supabase.from('students').select('adm_no, class_name'),
+      supabase.from('marks').select('adm_no, final_mark'),
+      supabase.from('attendance').select('status').eq('adm_no', targetAdm)
     ]);
 
-    setLoading(false);
-    if (!st) return setMsg('❌ ഈ അഡ്മിഷൻ നമ്പറുള്ള കുട്ടിയെ കണ്ടെത്താനായില്ല!');
+    if (!st) {
+      setLoading(false);
+      return setMsg('❌ ഈ അഡ്മിഷൻ നമ്പറുള്ള കുട്ടിയെ കണ്ടെത്താനായില്ല!');
+    }
 
-    let grandTotal = 0, totalMax = 0, failedCount = 0;
-    const marksList = (mk || []).map(m => {
-      const isHifz = m.subject.toUpperCase().includes('HIFZ');
-      const isMid = m.subject.toUpperCase().includes('MIDTERM');
-      const maxM = isHifz || isMid ? 100 : 30;
-      const passM = isHifz || isMid ? 40 : 12;
-      const scored = Number(m.final_mark) || 0;
-      grandTotal += scored;
-      totalMax += maxM;
-      const status = scored >= passM ? 'Passed' : 'Failed';
-      if (status === 'Failed') failedCount++;
-      return { ...m, maxM, scored, status, showW: !isHifz && !isMid };
+    const { data: assignedSubs } = await supabase
+      .from('subject_assignments')
+      .select('subject')
+      .eq('class_name', st.class_name);
+
+    setLoading(false);
+
+    // Build complete subject list for this class (assigned + any existing marks)
+    const subSet = new Set();
+    (assignedSubs || []).forEach(a => { if (a.subject) subSet.add(a.subject.trim()); });
+    (mk || []).forEach(m => { if (m.subject) subSet.add(m.subject.trim()); });
+    const allSubjects = Array.from(subSet);
+
+    const markBySub = {};
+    (mk || []).forEach(m => {
+      if (m.subject) markBySub[m.subject.trim().toUpperCase()] = m;
     });
+
+    const hasVal = (v) => v !== null && v !== undefined && v !== '';
+
+    let grandTotal = 0;
+    let totalMax = 0;
+    let failedCount = 0;
+
+    const marksList = allSubjects.map((subName, idx) => {
+      const m = markBySub[subName.toUpperCase()] || null;
+      const isHifz = subName.toUpperCase().includes('HIFZ');
+      const isMid = subName.toUpperCase().includes('MIDTERM');
+      const isSingle = isHifz || isMid;
+      const maxM = isSingle ? 100 : 30;
+      const passM = isSingle ? 40 : 12;
+      totalMax += maxM;
+
+      if (!m) {
+        return {
+          sl: idx + 1,
+          subject: subName,
+          w1: '-', w2: '-', w3: '-', w4: '-',
+          scored: '-', maxM, perc: '-', status: 'Pending'
+        };
+      }
+
+      const w1 = !isSingle && hasVal(m.w1) ? m.w1 : '-';
+      const w2 = !isSingle && hasVal(m.w2) ? m.w2 : '-';
+      const w3 = !isSingle && hasVal(m.w3) ? m.w3 : '-';
+      const w4 = !isSingle && hasVal(m.w4) ? m.w4 : '-';
+
+      const hasAnyMark = isSingle
+        ? hasVal(m.final_mark) || hasVal(m.total)
+        : (w1 !== '-' || w2 !== '-' || w3 !== '-' || w4 !== '-');
+
+      const allFourEntered = isSingle
+        ? hasAnyMark
+        : (w1 !== '-' && w2 !== '-' && w3 !== '-' && w4 !== '-');
+
+      const scoredNum = hasAnyMark ? Number(m.final_mark || 0) : null;
+      if (scoredNum !== null) grandTotal += scoredNum;
+
+      let status = 'Pending';
+      if (allFourEntered && scoredNum !== null) {
+        status = scoredNum >= passM ? 'Passed' : 'Failed';
+        if (status === 'Failed') failedCount++;
+      }
+
+      const scoredDisplay = scoredNum === null
+        ? '-'
+        : (Number.isInteger(scoredNum) ? String(scoredNum) : scoredNum.toFixed(1));
+
+      return {
+        sl: idx + 1,
+        subject: subName,
+        w1, w2, w3, w4,
+        scored: scoredDisplay,
+        maxM,
+        perc: scoredNum === null ? '-' : ((scoredNum / maxM) * 100).toFixed(1) + '%',
+        status
+      };
+    });
+
+    // Class Rank & Campus Rank
+    const totalsByAdm = {};
+    (allMarks || []).forEach(r => {
+      totalsByAdm[r.adm_no] = (totalsByAdm[r.adm_no] || 0) + (Number(r.final_mark) || 0);
+    });
+
+    const campusList = (allStudents || []).map(s => ({
+      adm_no: s.adm_no,
+      class_name: s.class_name,
+      total: totalsByAdm[s.adm_no] || 0
+    })).sort((a, b) => b.total - a.total);
+
+    const classList = campusList.filter(s => s.class_name === st.class_name);
+    const campusRank = campusList.findIndex(s => String(s.adm_no) === String(st.adm_no)) + 1;
+    const classRank = classList.findIndex(s => String(s.adm_no) === String(st.adm_no)) + 1;
+
+    // Attendance summary
+    const attTotal = (attData || []).length;
+    const attPresent = (attData || []).filter(a => ['present', 'p'].includes(String(a.status || '').toLowerCase())).length;
+    const attPerc = attTotal > 0 ? ((attPresent / attTotal) * 100).toFixed(1) : null;
 
     setGradeCard({
       student: st,
@@ -294,7 +391,11 @@ export default function ExamsModule({ onBack, user }) {
       grandTotal: grandTotal.toFixed(2),
       totalMax,
       perc: totalMax > 0 ? ((grandTotal / totalMax) * 100).toFixed(2) : '0.00',
-      failedCount
+      failedCount,
+      classRank: classRank > 0 ? `${classRank} / ${classList.length}` : '-',
+      campusRank: campusRank > 0 ? `${campusRank} / ${campusList.length}` : '-',
+      attendance: attTotal > 0 ? `${attPresent} / ${attTotal} Days (${attPerc}%)` : '-',
+      dateStr: new Date().toLocaleDateString('en-US')
     });
   }
 
@@ -557,47 +658,100 @@ const handleEnterDown = (e) => {
 
           {gradeCard && (
             <>
-              <div id="nhia-grade-card" style={{ background: '#fff', padding: 20, border: '2px solid #000', fontFamily: 'Times New Roman, serif', color: '#000' }}>
-                <div style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: 10, marginBottom: 12 }}>
-                  <h3 style={{ margin: 0, fontSize: 18 }}>Noorul Hidaya Islamic Academy, Pattambi</h3>
-                  <div style={{ fontSize: 12 }}>(Affiliated to: Darul Huda Islamic University) • Academic Year 2026-27</div>
+              <div id="nhia-grade-card" style={{ background: '#fff', padding: '18px 20px', fontFamily: 'Times New Roman, serif', color: '#000', border: '1px solid #cbd5e1' }}>
+                <div style={{ textAlign: 'center', borderBottom: '1.5px solid #000', paddingBottom: 10, marginBottom: 12 }}>
+                  <h3 style={{ margin: 0, fontSize: 19, fontWeight: 700 }}>Noorul Hidaya Islamic Academy, Pattambi</h3>
+                  <div style={{ fontSize: 12, marginTop: 3 }}>(Affiliated to: Darul Huda Islamic University)</div>
+                  <div style={{ fontSize: 11, marginTop: 2 }}>Kondoorkkara, Aman nagar, 679313</div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 12 }}>
-                  <div><b>Name:</b> {gradeCard.student.name}</div>
-                  <div><b>Adm No:</b> {gradeCard.student.adm_no}</div>
-                  <div><b>Class:</b> {gradeCard.student.class_name}</div>
-                </div>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center', marginBottom: 12 }}>
+
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 12 }}>
+                  <tbody>
+                    <tr>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', width: '32%' }}><b>Academic Year:</b> 2026-27</td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'center', fontWeight: 700, fontSize: 14 }}>CCE Grade Card</td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', width: '30%' }}><b>Term:</b> Half Year</td>
+                    </tr>
+                    <tr>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px' }}><b>Date:</b> {gradeCard.dateStr}</td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px' }}><b>Ad No:</b> {gradeCard.student.adm_no}</td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px' }}><b>Std:</b> {gradeCard.student.class_name}</td>
+                    </tr>
+                    <tr>
+                      <td colSpan={2} style={{ border: '1px solid #000', padding: '6px 8px' }}><b>Name:</b> {gradeCard.student.name}</td>
+                      <td style={{ border: '1px solid #000', padding: '6px 8px', color: '#1d4ed8', fontWeight: 600 }}><b>Attendance:</b> {gradeCard.attendance}</td>
+                    </tr>
+                  </tbody>
+                </table>
+
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5, textAlign: 'center', marginBottom: 14 }}>
                   <thead>
-                    <tr style={{ background: '#f2f2f2' }}>
-                      <th style={{ border: '1px solid #000', padding: 6 }}>Subject</th>
-                      <th style={{ border: '1px solid #000', padding: 6 }}>W1</th>
-                      <th style={{ border: '1px solid #000', padding: 6 }}>W2</th>
-                      <th style={{ border: '1px solid #000', padding: 6 }}>W3</th>
-                      <th style={{ border: '1px solid #000', padding: 6 }}>W4</th>
-                      <th style={{ border: '1px solid #000', padding: 6 }}>Scored</th>
-                      <th style={{ border: '1px solid #000', padding: 6 }}>Max</th>
-                      <th style={{ border: '1px solid #000', padding: 6 }}>Status</th>
+                    <tr style={{ background: '#f8fafc' }}>
+                      <th style={{ border: '1px solid #000', padding: '6px 4px', width: 38 }}>Sl No</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 8px', textAlign: 'left' }}>Subjects</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 4px', width: 38 }}>W1</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 4px', width: 38 }}>W2</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 4px', width: 38 }}>W3</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 4px', width: 38 }}>W4</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 5px', width: 52 }}>Scored</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 4px', width: 42 }}>Max</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 5px', width: 52 }}>%</th>
+                      <th style={{ border: '1px solid #000', padding: '6px 5px', width: 64 }}>Status</th>
                     </tr>
                   </thead>
                   <tbody>
                     {gradeCard.marks.map(m => (
-                      <tr key={m.id}>
-                        <td style={{ border: '1px solid #000', padding: 6, textAlign: 'left', fontWeight: 'bold' }}>{m.subject}</td>
-                        <td style={{ border: '1px solid #000', padding: 6 }}>{m.showW ? (m.w1 ?? '-') : '-'}</td>
-                        <td style={{ border: '1px solid #000', padding: 6 }}>{m.showW ? (m.w2 ?? '-') : '-'}</td>
-                        <td style={{ border: '1px solid #000', padding: 6 }}>{m.showW ? (m.w3 ?? '-') : '-'}</td>
-                        <td style={{ border: '1px solid #000', padding: 6 }}>{m.showW ? (m.w4 ?? '-') : '-'}</td>
-                        <td style={{ border: '1px solid #000', padding: 6, fontWeight: 'bold' }}>{m.scored}</td>
-                        <td style={{ border: '1px solid #000', padding: 6 }}>{m.maxM}</td>
-                        <td style={{ border: '1px solid #000', padding: 6, color: m.status === 'Failed' ? 'red' : 'green', fontWeight: 'bold' }}>{m.status}</td>
+                      <tr key={m.subject}>
+                        <td style={{ border: '1px solid #000', padding: '5px 4px' }}>{m.sl}</td>
+                        <td style={{ border: '1px solid #000', padding: '5px 8px', textAlign: 'left', fontWeight: 700 }}>{m.subject}</td>
+                        <td style={{ border: '1px solid #000', padding: '5px 4px' }}>{m.w1}</td>
+                        <td style={{ border: '1px solid #000', padding: '5px 4px' }}>{m.w2}</td>
+                        <td style={{ border: '1px solid #000', padding: '5px 4px' }}>{m.w3}</td>
+                        <td style={{ border: '1px solid #000', padding: '5px 4px' }}>{m.w4}</td>
+                        <td style={{ border: '1px solid #000', padding: '5px 4px', fontWeight: 700 }}>{m.scored}</td>
+                        <td style={{ border: '1px solid #000', padding: '5px 4px' }}>{m.maxM}</td>
+                        <td style={{ border: '1px solid #000', padding: '5px 4px' }}>{m.perc}</td>
+                        <td style={{
+                          border: '1px solid #000', padding: '5px 4px', fontWeight: 600,
+                          fontStyle: m.status === 'Pending' ? 'italic' : 'normal',
+                          color: m.status === 'Passed' ? '#15803d' : m.status === 'Failed' ? '#dc2626' : '#ea580c'
+                        }}>
+                          {m.status}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 'bold' }}>
-                  <span>Grand Total: {gradeCard.grandTotal} / {gradeCard.totalMax} ({gradeCard.perc}%)</span>
-                  <span>Failed: {gradeCard.failedCount}</span>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', gap: 16 }}>
+                  <table style={{ width: '56%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <tbody>
+                      <tr>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px', width: '52%' }}>Grand Total</td>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px' }}>{gradeCard.grandTotal} / {gradeCard.totalMax}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px' }}>Percentage</td>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px' }}>{gradeCard.perc} %</td>
+                      </tr>
+                      <tr>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px' }}>Class Rank</td>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px' }}>{gradeCard.classRank}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px' }}>Campus Rank</td>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px' }}>{gradeCard.campusRank}</td>
+                      </tr>
+                      <tr>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px' }}>Failed Subjects</td>
+                        <td style={{ border: '1px solid #000', padding: '6px 8px', color: '#dc2626', fontWeight: 700 }}>{gradeCard.failedCount}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <div style={{ textAlign: 'center', minWidth: 150, paddingBottom: 4 }}>
+                    <div style={{ borderTop: '1px solid #000', paddingTop: 4, fontWeight: 700, fontSize: 13 }}>Principal</div>
+                  </div>
                 </div>
               </div>
 
