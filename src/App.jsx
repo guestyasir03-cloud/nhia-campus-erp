@@ -90,7 +90,13 @@ export default function App() {
   const [modules, setModules] = useState(DEFAULT_MODULES);
   const [roles, setRoles] = useState(DEFAULT_ROLES);
   const [newRoleName, setNewRoleName] = useState('');
-  const [stats, setStats] = useState({ students: 0, staff: 0, attendance: '—' });
+  const [stats, setStats] = useState(() => {
+    try {
+      const cached = localStorage.getItem('nhia_dashboard_stats');
+      if (cached) return JSON.parse(cached);
+    } catch {}
+    return { students: 0, staff: 0, attendance: '—' };
+  });
   const [newModName, setNewModName] = useState('');
   const [academicYear, setAcademicYear] = useState('2026–27');
   const [resetting, setResetting] = useState(false);
@@ -124,7 +130,7 @@ export default function App() {
         supabase.from('staff').select('*', { count: 'exact', head: true }),
         supabase.from('app_settings').select('key, value').in('key', ['academic_year', 'portal_roles']),
         supabase.from('user_avatars').select('avatar_data').eq('user_key', 'academy_logo').maybeSingle(),
-        supabase.from('attendance').select('status').eq('date', todayStr),
+        supabase.from('spot_attendance').select('status').eq('session_date', todayStr),
         supabase.from('student_leaves').select('*', { count: 'exact', head: true }).neq('status', 'Returned').lte('start_date', todayStr)
       ]);
 
@@ -143,12 +149,16 @@ export default function App() {
         const presentEst = Math.max(0, stCount - (activeOutCount || 0));
         livePct = Math.round((presentEst / stCount) * 100) + '%';
       }
-      setStats(prev => ({
-        ...prev,
-        students: stCount || prev.students,
-        staff: sfCount || prev.staff,
-        attendance: livePct
-      }));
+      setStats(prev => {
+        const next = {
+          ...prev,
+          students: stCount ?? prev.students,
+          staff: sfCount ?? prev.staff,
+          attendance: livePct
+        };
+        try { localStorage.setItem('nhia_dashboard_stats', JSON.stringify(next)); } catch {}
+        return next;
+      });
 
       (settingsData || []).forEach(s => {
         if (s.key === 'academic_year' && s.value) setAcademicYear(s.value);
