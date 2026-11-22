@@ -161,6 +161,28 @@ export default function FinanceModule({ onBack, user }) {
               .gt('month_paid', u.last_paid_month)
           )
       );
+
+      // Auto-create receipt for the saved Last Paid Month if not already present
+      const { data: existingRecs } = await supabase
+        .from('donation_receipts')
+        .select('adm_no, month_paid')
+        .gt('amount', 0)
+        .eq('class_name', selectedClass);
+
+      const existingSet = new Set((existingRecs || []).map(r => `${r.adm_no}_${r.month_paid}`));
+      const newReceipts = updates
+        .filter(u => u.last_paid_month && u.monthly_donation > 0 && !existingSet.has(`${u.adm_no}_${u.last_paid_month}`))
+        .map(u => ({
+          adm_no: u.adm_no,
+          class_name: selectedClass,
+          month_paid: u.last_paid_month,
+          amount: u.monthly_donation,
+          recorded_by: user?.name || 'Admin'
+        }));
+
+      if (newReceipts.length > 0) {
+        await supabase.from('donation_receipts').insert(newReceipts);
+      }
     }
     setLoading(false);
     if (error) setMsg('Error: ' + error.message);
