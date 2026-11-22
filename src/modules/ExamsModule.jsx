@@ -301,7 +301,20 @@ export default function ExamsModule({ onBack, user }) {
   function downloadPDF() {
     exportReportPDF('nhia-grade-card', `${gradeCard.student.name}_GradeCard.pdf`, false);
   }
-
+const handleEnterDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const td = e.target.closest('td');
+      const nextRow = e.target.closest('tr')?.nextElementSibling;
+      if (td && nextRow) {
+        const nextInput = nextRow.children[td.cellIndex]?.querySelector('input');
+        if (nextInput) {
+          nextInput.focus();
+          nextInput.select();
+        }
+      }
+    }
+  };
   const Header = ({ title, backAction }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
       <button onClick={backAction} style={{ width: 34, height: 34, borderRadius: 10, border: 'none', background: '#e0e7ff', color: '#2e44d2', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
@@ -458,14 +471,14 @@ export default function ExamsModule({ onBack, user }) {
                           </td>
                           {isSingleMarkMode ? (
                             <td style={{ padding: 6 }}>
-                              <input type="number" value={m.total} onChange={e => updateMark(s.adm_no, 'total', e.target.value, 100)} style={{ width: 65, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} />
+                              <input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.total} onChange={e => updateMark(s.adm_no, 'total', e.target.value, 100)} style={{ width: 65, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} />
                             </td>
                           ) : (
                             <>
-                              <td><input type="number" value={m.w1} onChange={e => updateMark(s.adm_no, 'w1', e.target.value, 15)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
-                              <td><input type="number" value={m.w2} onChange={e => updateMark(s.adm_no, 'w2', e.target.value, 20)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
-                              <td><input type="number" value={m.w3} onChange={e => updateMark(s.adm_no, 'w3', e.target.value, 25)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
-                              <td><input type="number" value={m.w4} onChange={e => updateMark(s.adm_no, 'w4', e.target.value, 40)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
+                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.w1} onChange={e => updateMark(s.adm_no, 'w1', e.target.value, 15)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
+                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.w2} onChange={e => updateMark(s.adm_no, 'w2', e.target.value, 20)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
+                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.w3} onChange={e => updateMark(s.adm_no, 'w3', e.target.value, 25)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
+                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.w4} onChange={e => updateMark(s.adm_no, 'w4', e.target.value, 40)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
                             </>
                           )}
                         </tr>
