@@ -333,13 +333,12 @@ export default function App() {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
         <div style={{ width: '100%', maxWidth: 400, background: '#fff', borderRadius: 20, padding: 28, boxShadow: '0 10px 30px rgba(37,99,235,0.08)', border: '1px solid #e2e8f0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#2e44d2', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 16, overflow: 'hidden', flexShrink: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: 24 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#2e44d2', letterSpacing: 0.3 }}>Welcome to</div>
+            <div style={{ fontWeight: 800, fontSize: 21, color: '#0f172a', marginTop: 2 }}>Noorul Hidaya</div>
+            <div style={{ fontSize: 12.5, color: '#64748b', marginBottom: 16 }}>Islamic Academy • Campus ERP</div>
+            <div style={{ width: 96, height: 96, borderRadius: 22, background: '#2e44d2', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 28, overflow: 'hidden', boxShadow: '0 8px 20px rgba(46,68,210,0.16)', border: '2px solid #e2e8f0' }}>
               {academyLogo ? <img src={academyLogo} alt="NH" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'NH'}
-            </div>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 17, color: '#0f172a' }}>Noorul Hidaya</div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>Islamic Academy • Campus ERP</div>
             </div>
           </div>
 
