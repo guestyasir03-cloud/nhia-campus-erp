@@ -9,6 +9,7 @@ import { clearClassAccessCache } from '../lib/useClassAccess';
 const MODULES = [
   { id: 'attendance', label: 'Attendance Records', desc: 'Daily & monthly attendance logs', tables: ['attendance'], classScoped: true, critical: false },
   { id: 'leaves', label: 'Leave & Outpass Records', desc: 'Student leave applications & return logs', tables: ['student_leaves'], classScoped: true, critical: false },
+  { id: 'gadgets', label: 'Gadget Registry & Requests', desc: 'Approved campus gadgets & pending requests', tables: ['gadgets', 'gadget_requests'], classScoped: false, critical: false },
   { id: 'marks', label: 'Exam Marks (W1–W4 / Midterm / Hifz)', desc: 'All student marks & grade records', tables: ['marks'], classScoped: true, critical: false },
   { id: 'activity', label: 'Activity & Conduct Points', desc: 'Student merit (+) & demerit (-) logs', tables: ['activity_points'], classScoped: true, critical: false },
   { id: 'appraisal', label: 'Staff Appraisal Records', desc: 'Monitoring logs, self-forms & scorecards', tables: ['appraisal_monitoring', 'appraisal_self_assessments', 'appraisal_evaluations'], classScoped: false, critical: false },
