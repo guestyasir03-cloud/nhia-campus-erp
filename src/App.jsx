@@ -123,7 +123,11 @@ export default function App() {
         supabase.from('user_avatars').select('avatar_data').eq('user_key', 'academy_logo').maybeSingle()
       ]);
 
-      if (modData && modData.length > 0) setModules(modData);
+      if (modData && modData.length > 0) {
+        const existingIds = new Set(modData.map(m => m.id));
+        const missingDefaults = DEFAULT_MODULES.filter(m => !existingIds.has(m.id));
+        setModules([...modData, ...missingDefaults]);
+      }
       setStats(prev => ({
         ...prev,
         students: stCount || prev.students,
