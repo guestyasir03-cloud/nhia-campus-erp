@@ -142,10 +142,7 @@ export default function App() {
         setModules(merged);
       }
       let livePct = '100%';
-      if (todayAtt && todayAtt.length > 0) {
-        const presentCount = todayAtt.filter(a => /^(p|present)$/i.test(String(a.status || '').trim())).length;
-        livePct = Math.round((presentCount / todayAtt.length) * 100) + '%';
-      } else if (stCount > 0) {
+      if (stCount > 0) {
         const presentEst = Math.max(0, stCount - (activeOutCount || 0));
         livePct = Math.round((presentEst / stCount) * 100) + '%';
       }
