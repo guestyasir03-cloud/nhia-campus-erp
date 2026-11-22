@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { FileText, Award, Download, ChevronLeft, Save, Search } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { exportReportPDF, exportReportJPEG } from '../lib/exportReport';
@@ -124,7 +124,7 @@ export default function ExamsModule({ onBack, user }) {
     const targetSub = typeof subParam === 'string' ? subParam : subject;
     const targetMode = modeParam || examMode;
 
-    if (!targetClass || !targetSub.trim()) return alert('ക്ലാസ്സും വിഷയവും നൽകുക!');
+    if (!targetClass || !targetSub.trim()) return alert('à´•àµà´²à´¾à´¸àµà´¸àµà´‚ à´µà´¿à´·à´¯à´µàµà´‚ à´¨àµ½à´•àµà´•!');
     setLoading(true);
     setMsg('');
 
@@ -155,7 +155,7 @@ export default function ExamsModule({ onBack, user }) {
 
   function updateMark(admNo, field, value, max) {
     if (value !== '' && Number(value) > max) {
-      alert(`പരമാവധി ${max} മാർക്ക് മാത്രമേ നൽകാൻ കഴിയൂ!`);
+      alert(`à´ªà´°à´®à´¾à´µà´§à´¿ ${max} à´®à´¾àµ¼à´•àµà´•àµ à´®à´¾à´¤àµà´°à´®àµ‡ à´¨àµ½à´•à´¾àµ» à´•à´´à´¿à´¯àµ‚!`);
       return;
     }
     setMarksMap(prev => ({
@@ -215,17 +215,17 @@ export default function ExamsModule({ onBack, user }) {
 
     if (rows.length === 0) {
       setLoading(false);
-      return setMsg('⚠️ സേവ് ചെയ്യാൻ മാർക്കുകളൊന്നും നൽകിയിട്ടില്ല.');
+      return setMsg('âš ï¸ à´¸àµ‡à´µàµ à´šàµ†à´¯àµà´¯à´¾àµ» à´®à´¾àµ¼à´•àµà´•àµà´•à´³àµŠà´¨àµà´¨àµà´‚ à´¨àµ½à´•à´¿à´¯à´¿à´Ÿàµà´Ÿà´¿à´²àµà´².');
     }
 
     const { error } = await supabase.from('marks').upsert(rows, { onConflict: 'adm_no,subject,academic_year' });
     setLoading(false);
-    if (error) setMsg('❌ Error: ' + error.message);
-    else setMsg(`✅ ${rows.length} കുട്ടികളുടെ ${dbSubject} മാർക്കുകൾ സേവ് ചെയ്തു!`);
+    if (error) setMsg('âŒ Error: ' + error.message);
+    else setMsg(`âœ… ${rows.length} à´•àµà´Ÿàµà´Ÿà´¿à´•à´³àµà´Ÿàµ† ${dbSubject} à´®à´¾àµ¼à´•àµà´•àµà´•àµ¾ à´¸àµ‡à´µàµ à´šàµ†à´¯àµà´¤àµ!`);
   }
 
   async function generateClassReport() {
-    if (!selectedClass) return alert('ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക!');
+    if (!selectedClass) return alert('à´•àµà´²à´¾à´¸àµà´¸àµ à´¤à´¿à´°à´žàµà´žàµ†à´Ÿàµà´•àµà´•àµà´•!');
     setLoading(true);
     const [{ data: stData }, { data: mkData }] = await Promise.all([
       supabase.from('students').select('adm_no, name').eq('class_name', selectedClass).order('name'),
@@ -262,7 +262,7 @@ export default function ExamsModule({ onBack, user }) {
 
   async function fetchGradeCard(admNoParam) {
     const targetAdm = (admNoParam || admInput).trim();
-    if (!targetAdm) return alert('അഡ്മിഷൻ നമ്പർ നൽകുക!');
+    if (!targetAdm) return alert('à´…à´¡àµà´®à´¿à´·àµ» à´¨à´®àµà´ªàµ¼ à´¨àµ½à´•àµà´•!');
     setLoading(true);
     setMsg('');
 
@@ -272,7 +272,7 @@ export default function ExamsModule({ onBack, user }) {
     ]);
 
     setLoading(false);
-    if (!st) return setMsg('❌ ഈ അഡ്മിഷൻ നമ്പറുള്ള കുട്ടിയെ കണ്ടെത്താനായില്ല!');
+    if (!st) return setMsg('âŒ à´ˆ à´…à´¡àµà´®à´¿à´·àµ» à´¨à´®àµà´ªà´±àµà´³àµà´³ à´•àµà´Ÿàµà´Ÿà´¿à´¯àµ† à´•à´£àµà´Ÿàµ†à´¤àµà´¤à´¾à´¨à´¾à´¯à´¿à´²àµà´²!');
 
     let grandTotal = 0, totalMax = 0, failedCount = 0;
     const marksList = (mk || []).map(m => {
@@ -327,7 +327,7 @@ const handleEnterDown = (e) => {
   // Enabled modes for currently selected subject
   const enabledModes = activeConfig
     ? [
-        ...(activeConfig.has_w1_w4 ? [{ id: 'w1_w4', label: 'W1–W4 (CCE)' }] : []),
+        ...(activeConfig.has_w1_w4 ? [{ id: 'w1_w4', label: 'W1â€“W4 (CCE)' }] : []),
         ...(activeConfig.has_midterm ? [{ id: 'midterm', label: 'Midterm (100)' }] : []),
         ...(activeConfig.has_hifz ? [{ id: 'hifz', label: 'Hifz / Viva (100)' }] : [])
       ]
@@ -339,7 +339,7 @@ const handleEnterDown = (e) => {
         <Header title="Examinations" backAction={onBack} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
-            { id: 'entry', label: 'Mark entry (W1–W4 / Hifz / Midterm)', icon: FileText },
+            { id: 'entry', label: 'Mark entry (W1â€“W4 / Hifz / Midterm)', icon: FileText },
             { id: 'report', label: 'Class mark report & Ranking', icon: Award },
             { id: 'gradecard', label: 'Student Grade Card (PDF)', icon: Download }
           ].map(item => {
@@ -392,8 +392,8 @@ const handleEnterDown = (e) => {
             ) : (
               <div style={{ fontSize: 13, color: '#94a3b8', padding: '6px 0' }}>
                 {isAdmin
-                  ? 'അസൈൻമെന്റുകളൊന്നും ചേർത്തിട്ടില്ല. താഴെ നിന്ന് നേരിട്ട് ക്ലാസ്സും വിഷയവും തിരഞ്ഞെടുക്കാം.'
-                  : 'നിങ്ങൾക്ക് ഇതുവരെ വിഷയങ്ങളൊന്നും അസൈൻ ചെയ്തിട്ടില്ല. അഡ്മിനുമായി ബന്ധപ്പെടുക.'}
+                  ? 'à´…à´¸àµˆàµ»à´®àµ†à´¨àµà´±àµà´•à´³àµŠà´¨àµà´¨àµà´‚ à´šàµ‡àµ¼à´¤àµà´¤à´¿à´Ÿàµà´Ÿà´¿à´²àµà´². à´¤à´¾à´´àµ† à´¨à´¿à´¨àµà´¨àµ à´¨àµ‡à´°à´¿à´Ÿàµà´Ÿàµ à´•àµà´²à´¾à´¸àµà´¸àµà´‚ à´µà´¿à´·à´¯à´µàµà´‚ à´¤à´¿à´°à´žàµà´žàµ†à´Ÿàµà´•àµà´•à´¾à´‚.'
+                  : 'à´¨à´¿à´™àµà´™àµ¾à´•àµà´•àµ à´‡à´¤àµà´µà´°àµ† à´µà´¿à´·à´¯à´™àµà´™à´³àµŠà´¨àµà´¨àµà´‚ à´…à´¸àµˆàµ» à´šàµ†à´¯àµà´¤à´¿à´Ÿàµà´Ÿà´¿à´²àµà´². à´…à´¡àµà´®à´¿à´¨àµà´®à´¾à´¯à´¿ à´¬à´¨àµà´§à´ªàµà´ªàµ†à´Ÿàµà´•.'}
               </div>
             )}
 
@@ -421,13 +421,13 @@ const handleEnterDown = (e) => {
               <div style={{ borderTop: '1px dashed #e2e8f0', paddingTop: 12, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#64748b' }}>OR MANUAL ENTRY (ADMIN)</div>
                 <select value={selectedClass} onChange={e => { setSelectedClass(e.target.value); setSelectedAssignment(''); setActiveConfig(null); }} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}>
-                  <option value="">-- ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക --</option>
+                  <option value="">-- à´•àµà´²à´¾à´¸àµà´¸àµ à´¤à´¿à´°à´žàµà´žàµ†à´Ÿàµà´•àµà´•àµà´• --</option>
                   {classes.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <input
                   value={subject}
                   onChange={e => { setSubject(e.target.value); setSelectedAssignment(''); setActiveConfig(null); }}
-                  placeholder="വിഷയം (ഉദാ: Fiqh, English, Hifz)"
+                  placeholder="à´µà´¿à´·à´¯à´‚ (à´‰à´¦à´¾: Fiqh, English, Hifz)"
                   style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14 }}
                 />
                 <button onClick={() => loadForEntry(selectedClass, subject, 'w1_w4')} style={{ padding: 11, borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
@@ -437,12 +437,12 @@ const handleEnterDown = (e) => {
             )}
           </div>
 
-          {loading && <p style={{ textAlign: 'center', color: '#64748b', fontSize: 13 }}>ലോഡ് ചെയ്യുന്നു...</p>}
+          {loading && <p style={{ textAlign: 'center', color: '#64748b', fontSize: 13 }}>à´²àµ‹à´¡àµ à´šàµ†à´¯àµà´¯àµà´¨àµà´¨àµ...</p>}
 
           {students.length > 0 && !loading && (
             <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
               <div style={{ padding: '10px 14px', background: '#eef2ff', fontSize: 13, fontWeight: 700, color: '#2e44d2' }}>
-                {selectedClass} — {getDbSubjectKey(subject, examMode)} ({students.length} Students)
+                {selectedClass} â€” {getDbSubjectKey(subject, examMode)} ({students.length} Students)
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center' }}>
@@ -471,14 +471,14 @@ const handleEnterDown = (e) => {
                           </td>
                           {isSingleMarkMode ? (
                             <td style={{ padding: 6 }}>
-                              <input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.total} onChange={e => updateMark(s.adm_no, 'total', e.target.value, 100)} style={{ width: 65, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} />
+                              <input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} tabIndex={1000 + students.indexOf(s)} value={m.total} onChange={e => updateMark(s.adm_no, 'total', e.target.value, 100)} style={{ width: 65, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} />
                             </td>
                           ) : (
                             <>
-                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.w1} onChange={e => updateMark(s.adm_no, 'w1', e.target.value, 15)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
-                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.w2} onChange={e => updateMark(s.adm_no, 'w2', e.target.value, 20)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
-                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.w3} onChange={e => updateMark(s.adm_no, 'w3', e.target.value, 25)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
-                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} value={m.w4} onChange={e => updateMark(s.adm_no, 'w4', e.target.value, 40)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
+                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} tabIndex={1000 + students.indexOf(s)} value={m.w1} onChange={e => updateMark(s.adm_no, 'w1', e.target.value, 15)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
+                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} tabIndex={2000 + students.indexOf(s)} value={m.w2} onChange={e => updateMark(s.adm_no, 'w2', e.target.value, 20)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
+                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} tabIndex={3000 + students.indexOf(s)} value={m.w3} onChange={e => updateMark(s.adm_no, 'w3', e.target.value, 25)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
+                              <td><input type="number" enterKeyHint="next" onKeyDown={handleEnterDown} tabIndex={4000 + students.indexOf(s)} value={m.w4} onChange={e => updateMark(s.adm_no, 'w4', e.target.value, 40)} style={{ width: 46, padding: 6, textAlign: 'center', borderRadius: 6, border: '1px solid #cbd5e1' }} /></td>
                             </>
                           )}
                         </tr>
@@ -500,7 +500,7 @@ const handleEnterDown = (e) => {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ display: 'flex', gap: 8 }}>
             <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}>
-              <option value="">-- ക്ലാസ്സ് --</option>
+              <option value="">-- à´•àµà´²à´¾à´¸àµà´¸àµ --</option>
               {classes.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <button onClick={generateClassReport} style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
@@ -546,7 +546,7 @@ const handleEnterDown = (e) => {
               <input
                 value={admInput}
                 onChange={e => setAdmInput(e.target.value)}
-                placeholder="Admission No നൽകുക..."
+                placeholder="Admission No à´¨àµ½à´•àµà´•..."
                 style={{ flex: 1, padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}
               />
               <button onClick={() => fetchGradeCard()} style={{ padding: '0 18px', borderRadius: 10, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -560,7 +560,7 @@ const handleEnterDown = (e) => {
               <div id="nhia-grade-card" style={{ background: '#fff', padding: 20, border: '2px solid #000', fontFamily: 'Times New Roman, serif', color: '#000' }}>
                 <div style={{ textAlign: 'center', borderBottom: '2px solid #000', paddingBottom: 10, marginBottom: 12 }}>
                   <h3 style={{ margin: 0, fontSize: 18 }}>Noorul Hidaya Islamic Academy, Pattambi</h3>
-                  <div style={{ fontSize: 12 }}>(Affiliated to: Darul Huda Islamic University) • Academic Year 2026-27</div>
+                  <div style={{ fontSize: 12 }}>(Affiliated to: Darul Huda Islamic University) â€¢ Academic Year 2026-27</div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 12 }}>
                   <div><b>Name:</b> {gradeCard.student.name}</div>
