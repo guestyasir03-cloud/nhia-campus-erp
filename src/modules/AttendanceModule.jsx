@@ -440,7 +440,17 @@ export default function AttendanceModule({ onBack, user }) {
     setMsg(`Deleted ${c.className} from "${sg.session}".`);
   }
 
+  function canEditClassEntry(takenBy) {
+    if (user?.role === 'admin') return true;
+    const me = (user?.name || '').trim().toLowerCase();
+    const owner = (takenBy || '').trim().toLowerCase();
+    return Boolean(me && owner && me === owner);
+  }
+
   function openForEdit(h) {
+    if (!canEditClassEntry(h.takenBy)) {
+      return alert(`Only Admin or ${h.takenBy || 'the entry staff'} can edit this attendance.`);
+    }
     setSpotDate(h.date);
     if (DEFAULT_SESSIONS.includes(h.session)) {
       setSpotSession(h.session);
@@ -806,12 +816,14 @@ export default function AttendanceModule({ onBack, user }) {
                                   </div>
                                 </div>
                                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                                  <button
+                                  {canEditClassEntry(c.takenBy) && (
+                                    <button
                                   onClick={() => openForEdit(c)}
                                   style={{ padding: '6px 12px', borderRadius: 7, border: 'none', background: '#0284c7', color: '#fff', fontWeight: 700, fontSize: 11, cursor: 'pointer' }}
                                 >
                                   Edit
                                 </button>
+                                  )}
                                   {user?.role === 'admin' && (
                                     <button
                                     onClick={() => deleteClassSession(sg, c)}
