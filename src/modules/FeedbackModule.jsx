@@ -35,7 +35,9 @@ export default function FeedbackModule({ onBack, user }) {
   const [msg, setMsg] = useState('');
 
   // Submit form state
-  const [selClass, setSelClass] = useState('');
+  const [selClass, setSelClass] = useState(user?.role === 'student' ? (user?.class_name || '') : '');
+  const [allClasses, setAllClasses] = useState([]);
+  const [allStaff, setAllStaff] = useState([]);
   const [enteredCode, setEnteredCode] = useState('');
   const [codeVerified, setCodeVerified] = useState(false);
   const [revealName, setRevealName] = useState(false);
@@ -61,16 +63,22 @@ export default function FeedbackModule({ onBack, user }) {
     const [
       { data: cfgData },
       { data: setData },
+      { data: stClsData },
+      { data: staffData },
       { data: respData }
     ] = await Promise.all([
       supabase.from('feedback_config').select('*').order('class_name').order('subject'),
       supabase.from('app_settings').select('key, value').in('key', ['fb_access_code', 'fb_cycle', 'fb_open']),
+      isAdmin ? supabase.from('students').select('class_name') : Promise.resolve({ data: [] }),
+      isAdmin ? supabase.from('staff').select('name').order('name') : Promise.resolve({ data: [] }),
       isAdmin || isTeacher
         ? supabase.from('feedback_responses').select('*').order('created_at', { ascending: false })
         : Promise.resolve({ data: [] })
     ]);
 
     setConfig(cfgData || []);
+    if (stClsData) setAllClasses([...new Set(stClsData.map(s => s.class_name).filter(Boolean))].sort());
+    if (staffData) setAllStaff(staffData.map(s => s.name).filter(Boolean));
     setResponses(respData || []);
     const sObj = { accessCode: '', cycle: 'Term 1', isOpen: true };
     (setData || []).forEach(r => {
@@ -440,9 +448,11 @@ export default function FeedbackModule({ onBack, user }) {
           <form onSubmit={handleAddConfig} style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Add Class – Subject – Teacher</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-              <input value={cfgClass} onChange={e => setCfgClass(e.target.value)} placeholder="Class (e.g. D1)" style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
+              <input list="fb-class-list" value={cfgClass} onChange={e => setCfgClass(e.target.value)} placeholder="Select/Type Class" style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
+              <datalist id="fb-class-list">{allClasses.map(c => <option key={c} value={c} />)}</datalist>
               <input value={cfgSubject} onChange={e => setCfgSubject(e.target.value)} placeholder="Subject" style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
-              <input value={cfgTeacher} onChange={e => setCfgTeacher(e.target.value)} placeholder="Teacher Name" style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
+              <input list="fb-staff-list" value={cfgTeacher} onChange={e => setCfgTeacher(e.target.value)} placeholder="Select/Type Teacher" style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
+              <datalist id="fb-staff-list">{allStaff.map(t => <option key={t} value={t} />)}</datalist>
             </div>
             <button type="submit" style={{ padding: 9, borderRadius: 9, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>+ Add Mapping</button>
 
