@@ -12,6 +12,50 @@ export default function ExamsModule({ onBack, user }) {
   const [activeConfig, setActiveConfig] = useState(null); // { has_w1_w4, has_midterm, has_hifz }
   const [examMode, setExamMode] = useState('w1_w4'); // 'w1_w4' | 'midterm' | 'hifz'
   const [selectedClass, setSelectedClass] = useState('');
+  const [workTasks, setWorkTasks] = useState({ w1: '', w2: '', w3: '', w4: '' });
+  const [showTaskEditor, setShowTaskEditor] = useState(false);
+  const [savingTasks, setSavingTasks] = useState(false);
+
+  useEffect(() => {
+    if (!selectedClass || !subject) {
+      setWorkTasks({ w1: '', w2: '', w3: '', w4: '' });
+      return;
+    }
+    const taskKey = `work_tasks_${selectedClass}_${getDbSubjectKey(subject, examMode)}`;
+    let active = true;
+    supabase.from('app_settings').select('value').eq('key', taskKey).maybeSingle().then(({ data }) => {
+      if (!active) return;
+      if (data?.value) {
+        try {
+          const parsed = JSON.parse(data.value);
+          setWorkTasks({ w1: parsed.w1 || '', w2: parsed.w2 || '', w3: parsed.w3 || '', w4: parsed.w4 || '' });
+          return;
+        } catch {}
+      }
+      setWorkTasks({ w1: '', w2: '', w3: '', w4: '' });
+    });
+    return () => { active = false; };
+  }, [selectedClass, subject, examMode]);
+
+  async function handleSaveWorkTasks() {
+    if (!selectedClass || !subject) return;
+    setSavingTasks(true);
+    const taskKey = `work_tasks_${selectedClass}_${getDbSubjectKey(subject, examMode)}`;
+    const clean = {
+      w1: workTasks.w1.trim(),
+      w2: workTasks.w2.trim(),
+      w3: workTasks.w3.trim(),
+      w4: workTasks.w4.trim()
+    };
+    const { error } = await supabase
+      .from('app_settings')
+      .upsert({ key: taskKey, value: JSON.stringify(clean) }, { onConflict: 'key' });
+    setSavingTasks(false);
+    if (!error) {
+      setWorkTasks(clean);
+      setShowTaskEditor(false);
+    }
+  }
   const [subject, setSubject] = useState('');
   const [students, setStudents] = useState([]);
   const [marksMap, setMarksMap] = useState({});
@@ -542,9 +586,68 @@ const handleEnterDown = (e) => {
 
           {students.length > 0 && !loading && (
             <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
-              <div style={{ padding: '10px 14px', background: '#eef2ff', fontSize: 13, fontWeight: 700, color: '#2e44d2' }}>
-                {selectedClass} — {getDbSubjectKey(subject, examMode)} ({students.length} Students)
+              <div style={{ padding: '10px 14px', background: '#eef2ff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#2e44d2' }}>
+                  {selectedClass} — {getDbSubjectKey(subject, examMode)} ({students.length} Students)
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowTaskEditor(v => !v)}
+                  style={{
+                    padding: '5px 10px', borderRadius: 8, border: '1px solid #c7d2fe',
+                    background: showTaskEditor ? '#2e44d2' : '#fff',
+                    color: showTaskEditor ? '#fff' : '#2e44d2',
+                    fontSize: 11.5, fontWeight: 700, cursor: 'pointer'
+                  }}
+                >
+                  {showTaskEditor ? 'Close Tasks' : '📝 Work Tasks'}
+                </button>
               </div>
+
+              {(workTasks.w1 || workTasks.w2 || workTasks.w3 || workTasks.w4) && !showTaskEditor && (
+                <div style={{ padding: '7px 14px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {[['W1', workTasks.w1], ['W2', workTasks.w2], ['W3', workTasks.w3], ['W4', workTasks.w4]]
+                    .filter(([, val]) => val)
+                    .map(([lbl, val]) => (
+                      <span key={lbl} style={{ fontSize: 11, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 99, padding: '3px 9px', color: '#334155' }}>
+                        <b style={{ color: '#2e44d2' }}>{lbl}:</b> {val}
+                      </span>
+                    ))}
+                </div>
+              )}
+
+              {showTaskEditor && (
+                <div style={{ padding: 12, background: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700, color: '#475569' }}>Define Work Tasks for {selectedClass} — {getDbSubjectKey(subject, examMode)}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+                    {[
+                      ['w1', 'W1 (15) Task (e.g. Assignment)'],
+                      ['w2', 'W2 (20) Task (e.g. Seminar)'],
+                      ['w3', 'W3 (25) Task (e.g. Class Test)'],
+                      ['w4', 'W4 (40) Task (e.g. Project)']
+                    ].map(([k, ph]) => (
+                      <input
+                        key={k}
+                        type="text"
+                        value={workTasks[k]}
+                        onChange={e => setWorkTasks(prev => ({ ...prev, [k]: e.target.value }))}
+                        placeholder={ph}
+                        style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}
+                      />
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={handleSaveWorkTasks}
+                      disabled={savingTasks}
+                      style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      {savingTasks ? 'Saving...' : 'Save Tasks'}
+                    </button>
+                  </div>
+                </div>
+              )}
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, textAlign: 'center' }}>
                   <thead style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
