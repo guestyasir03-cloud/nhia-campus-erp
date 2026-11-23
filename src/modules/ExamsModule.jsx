@@ -12,6 +12,19 @@ export default function ExamsModule({ onBack, user }) {
   const [activeConfig, setActiveConfig] = useState(null); // { has_w1_w4, has_midterm, has_hifz }
   const [examMode, setExamMode] = useState('w1_w4'); // 'w1_w4' | 'midterm' | 'hifz'
   const [selectedClass, setSelectedClass] = useState('');
+
+  const [subject, setSubject] = useState('');
+  const [students, setStudents] = useState([]);
+  const [marksMap, setMarksMap] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  // Class Report State
+  const [reportData, setReportData] = useState(null);
+
+  // Grade Card State
+  const [admInput, setAdmInput] = useState(user?.role === 'student' ? user.id : '');
+  const [gradeCard, setGradeCard] = useState(null);
   const [workTasks, setWorkTasks] = useState({ w1: '', w2: '', w3: '', w4: '' });
   const [showTaskEditor, setShowTaskEditor] = useState(false);
   const [savingTasks, setSavingTasks] = useState(false);
@@ -56,18 +69,6 @@ export default function ExamsModule({ onBack, user }) {
       setShowTaskEditor(false);
     }
   }
-  const [subject, setSubject] = useState('');
-  const [students, setStudents] = useState([]);
-  const [marksMap, setMarksMap] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState('');
-
-  // Class Report State
-  const [reportData, setReportData] = useState(null);
-
-  // Grade Card State
-  const [admInput, setAdmInput] = useState(user?.role === 'student' ? user.id : '');
-  const [gradeCard, setGradeCard] = useState(null);
 
   useEffect(() => {
     loadClasses();
