@@ -17,6 +17,7 @@ import StaffModule from './modules/StaffModule';
 import UserPasswordsPanel from './components/UserPasswordsPanel';
 import ReportsModule from './modules/ReportsModule';
 import LeaveModule from './modules/LeaveModule';
+import FeedbackModule from './modules/FeedbackModule';
 import GadgetRegistryModule from './modules/GadgetRegistryModule';
 import ChangePasswordBox from './components/ChangePasswordBox';
 import YearResetPanel from './components/YearResetPanel';
@@ -28,6 +29,7 @@ const ICON_MAP = {
 const DEFAULT_ROLES = ['admin', 'coordinator', 'teacher', 'student'];
 
 const DEFAULT_MODULES = [
+  { id: 'feedback', name: 'Feedback', icon: 'Star', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'examinations', name: 'Examinations', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'attendance', name: 'Attendance', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'leave', name: 'Leave Portal', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
@@ -473,6 +475,8 @@ export default function App() {
           <LeaveModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'gadgets' ? (
           <GadgetRegistryModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'feedback' ? (
+          <FeedbackModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'finance' ? (
           <FinanceModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'activity' ? (
