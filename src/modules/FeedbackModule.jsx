@@ -78,6 +78,8 @@ export default function FeedbackModule({ onBack, user }) {
   async function loadAll() {
     const [
       { data: cfgData },
+      { data: subAsgData },
+      { data: tchAsgData },
       { data: setData },
       { data: stClsData },
       { data: staffData },
@@ -85,6 +87,8 @@ export default function FeedbackModule({ onBack, user }) {
       { data: respData }
     ] = await Promise.all([
       supabase.from('feedback_config').select('*').order('class_name').order('subject'),
+      supabase.from('subject_assignments').select('*'),
+      supabase.from('teacher_assignments').select('*'),
       supabase.from('app_settings').select('key, value').in('key', ['fb_access_code', 'fb_cycle', 'fb_open']),
       isAdmin ? supabase.from('students').select('class_name') : Promise.resolve({ data: [] }),
       isAdmin ? supabase.from('staff').select('name').order('name') : Promise.resolve({ data: [] }),
@@ -94,7 +98,26 @@ export default function FeedbackModule({ onBack, user }) {
         : Promise.resolve({ data: [] })
     ]);
 
-    setConfig(cfgData || []);
+    // Auto-merge existing subject_assignments + teacher_assignments + custom feedback_config
+    const mergedMap = new Map();
+    const addMapping = (cls, sub, tch, id, isCustom) => {
+      const c = String(cls || '').trim();
+      const s = String(sub || '').trim();
+      const t = String(tch || '').trim();
+      if (!c || !s || !t) return;
+      const key = `${c.toLowerCase()}|${s.toLowerCase()}|${t.toLowerCase()}`;
+      if (!mergedMap.has(key)) {
+        mergedMap.set(key, { id, class_name: c, subject: s, teacher_name: t, isCustom });
+      }
+    };
+    (subAsgData || []).forEach(r => addMapping(r.class_name, r.subject_name || r.subject, r.staff_name || r.teacher_name, 'sa_' + r.id, false));
+    (tchAsgData || []).forEach(r => addMapping(r.class_name, r.subject_name || r.subject, r.staff_name || r.teacher_name, 'ta_' + r.id, false));
+    (cfgData || []).forEach(r => addMapping(r.class_name, r.subject, r.teacher_name, r.id, true));
+
+    const mergedConfig = Array.from(mergedMap.values()).sort((a, b) =>
+      a.class_name.localeCompare(b.class_name) || a.subject.localeCompare(b.subject)
+    );
+    setConfig(mergedConfig);
     setResponses(respData || []);
 
     if (stClsData) {
@@ -808,7 +831,11 @@ export default function FeedbackModule({ onBack, user }) {
                   {filteredConfig.map(c => (
                     <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 12 }}>
                       <span><b>{c.class_name}</b> • {c.subject} <span style={{ color: '#2e44d2', fontWeight: 600 }}>({c.teacher_name})</span></span>
-                      <button type="button" onClick={() => handleDeleteConfig(c.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}><Trash2 size={14} /></button>
+                      {c.isCustom ? (
+                        <button type="button" onClick={() => handleDeleteConfig(c.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}><Trash2 size={14} /></button>
+                      ) : (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '2px 6px', borderRadius: 6 }}>Auto</span>
+                      )}
                     </div>
                   ))}
                 </div>
