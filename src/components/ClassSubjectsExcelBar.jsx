@@ -8,6 +8,70 @@ function parseBool(v) {
   return ['yes', 'true', '1', 'y', 'on'].includes(s);
 }
 
+
+  async function downloadStyledJPEG(filename, title, subtitle, headers, rows) {
+    const padX = 28;
+    const rowH = 30;
+    const headerH = 76;
+    const tableHeadH = 36;
+    const width = 900;
+    const height = headerH + tableHeadH + Math.max(1, rows.length) * rowH + 28;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.fillStyle = '#1e3a8a';
+    ctx.fillRect(0, 0, width, 62);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 18px Arial, sans-serif';
+    ctx.fillText(title, padX, 27);
+
+    ctx.font = '12px Arial, sans-serif';
+    ctx.fillStyle = '#dbeafe';
+    ctx.fillText(subtitle, padX, 47);
+
+    const colW = (width - padX * 2) / headers.length;
+    ctx.fillStyle = '#eff6ff';
+    ctx.fillRect(padX, headerH, width - padX * 2, tableHeadH);
+    ctx.strokeStyle = '#cbd5e1';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(padX, headerH, width - padX * 2, tableHeadH);
+
+    ctx.fillStyle = '#1e3a8a';
+    ctx.font = 'bold 12px Arial, sans-serif';
+    headers.forEach((h, i) => {
+      ctx.fillText(String(h), padX + i * colW + 10, headerH + 22);
+    });
+
+    ctx.font = '12px Arial, sans-serif';
+    rows.forEach((r, rIdx) => {
+      const y = headerH + tableHeadH + rIdx * rowH;
+      ctx.fillStyle = rIdx % 2 === 0 ? '#ffffff' : '#f8fafc';
+      ctx.fillRect(padX, y, width - padX * 2, rowH);
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.strokeRect(padX, y, width - padX * 2, rowH);
+
+      r.forEach((val, cIdx) => {
+        ctx.fillStyle = '#0f172a';
+        const txt = String(val ?? '');
+        const maxChars = Math.max(10, Math.floor((colW - 18) / 7));
+        const clipped = txt.length > maxChars ? txt.slice(0, maxChars - 1) + '…' : txt;
+        ctx.fillText(clipped, padX + cIdx * colW + 10, y + 19);
+      });
+    });
+
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = canvas.toDataURL('image/jpeg', 0.92);
+    link.click();
+  }
+
 export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
   const [mode, setMode] = useState('subjects'); // 'subjects' | 'report'
   const [classes, setClasses] = useState([]);
@@ -151,6 +215,36 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
     const tag = selectedClass === 'ALL' ? 'All_Classes' : selectedClass.replace(/[^a-zA-Z0-9_-]/g, '_');
     XLSX.writeFile(wb, `Subjects_${tag}.xlsx`);
     setStatus(`Downloaded ${rows.length} subjects (${tag}).`);
+  }
+
+  async function handleDownloadSubjectsJPEG() {
+    setBusy(true);
+    setStatus('');
+    let q = supabase
+      .from('subject_assignments')
+      .select('class_name, subject_name, staff_name, has_w1_w4, has_midterm, has_hifz')
+      .order('class_name')
+      .order('subject_name');
+    if (selectedClass && selectedClass !== 'ALL') q = q.eq('class_name', selectedClass);
+    const { data, error } = await q;
+    setBusy(false);
+    if (error) return setStatus('JPEG error: ' + error.message);
+    if (!data || data.length === 0) return setStatus(`No subjects found for ${selectedClass === 'ALL' ? 'any class' : selectedClass}.`);
+
+    const tag = selectedClass === 'ALL' ? 'All_Classes' : selectedClass.replace(/[^a-zA-Z0-9_-]/g, '_');
+    await downloadStyledJPEG(
+      `Subjects_${tag}.jpg`,
+      'NHIA — Subjects & Assignments',
+      `Scope: ${selectedClass === 'ALL' ? 'All Classes' : selectedClass} • Total: ${data.length}`,
+      ['Class', 'Subject', 'Teacher', 'CCE / Mid / Hifz'],
+      data.map(r => [
+        r.class_name || '',
+        r.subject_name || '',
+        r.staff_name || 'Unassigned',
+        `${r.has_w1_w4 ? 'CCE ' : ''}${r.has_midterm ? 'Mid ' : ''}${r.has_hifz ? 'Hifz' : ''}`.trim() || 'OFF'
+      ])
+    );
+    setStatus(`Downloaded JPEG (${tag}).`);
   }
 
   function handleDownloadSubTemplate() {
@@ -311,6 +405,25 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
     const tag = repTeacherFilter !== 'ALL' ? repTeacherFilter.replace(/[^a-zA-Z0-9_-]/g, '_') : (repClassFilter !== 'ALL' ? repClassFilter : 'All_Staff');
     XLSX.writeFile(wb, `NHIA_Teacher_Subjects_${tag}.xlsx`);
     setStatus(`Downloaded Excel (${tag})!`);
+  }
+
+  async function handleExportReportJPEG() {
+    if (reportData.list.length === 0) return setStatus('No data to export.');
+    const tag = repTeacherFilter !== 'ALL' ? repTeacherFilter.replace(/[^a-zA-Z0-9_-]/g, '_') : (repClassFilter !== 'ALL' ? repClassFilter : 'All_Staff');
+    const rows = reportData.list.map((t, i) => [
+      i + 1,
+      t.teacher,
+      `${t.totalSubjects} Sub`,
+      Object.entries(t.classMap).map(([c, subs]) => `${c}: ${subs.join(', ')}`).join(' | ')
+    ]);
+    await downloadStyledJPEG(
+      `NHIA_Teacher_Subjects_${tag}.jpg`,
+      'NHIA — Teacher-wise Classes & Subjects',
+      `${repTeacherFilter === 'ALL' ? 'All Teachers' : repTeacherFilter} • ${repClassFilter === 'ALL' ? 'All Classes' : repClassFilter}`,
+      ['#', 'Teacher', 'Count', 'Classes & Subjects'],
+      rows
+    );
+    setStatus(`Downloaded JPEG (${tag})!`);
   }
 
   function handleExportReportPDF() {
@@ -516,8 +629,8 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
           </div>
 
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button type="button" onClick={handleExportReportExcel} style={{ flex: 1, minWidth: 95, padding: '8px 10px', borderRadius: 9, border: 'none', background: '#16a34a', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-              <Download size={13} /> Excel (.xlsx)
+            <button type="button" onClick={handleExportReportJPEG} style={{ flex: 1, minWidth: 95, padding: '8px 10px', borderRadius: 9, border: 'none', background: '#0284c7', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+              JPEG
             </button>
             <button type="button" onClick={handleExportReportPDF} style={{ flex: 1, minWidth: 95, padding: '8px 10px', borderRadius: 9, border: 'none', background: '#dc2626', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
               <FileText size={13} /> PDF Report
