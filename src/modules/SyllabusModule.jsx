@@ -49,6 +49,7 @@ export default function SyllabusModule({ onBack, user }) {
   const [showExcelBox, setShowExcelBox] = useState(false);
   const [uploadClass, setUploadClass] = useState('');
   const [replaceExisting, setReplaceExisting] = useState(false);
+  const [autoSyncSubjects, setAutoSyncSubjects] = useState(true);
   const [parsedRows, setParsedRows] = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -265,12 +266,40 @@ export default function SyllabusModule({ onBack, user }) {
     });
 
     const { error } = await supabase.from('syllabus_weeks').insert(payload);
+    if (error) { setUploading(false); return setMsg('Upload error: ' + error.message); }
+
+    let syncedCount = 0;
+    if (autoSyncSubjects) {
+      const subMap = new Map();
+      payload.forEach(r => {
+        const subName = String(r.subject || '').trim();
+        if (!subName) return;
+        const key = `${uploadClass.toLowerCase()}|${subName.toLowerCase()}`;
+        if (!subMap.has(key)) {
+          subMap.set(key, {
+            class_name: uploadClass,
+            subject_name: subName,
+            staff_id: null,
+            staff_name: null,
+            has_w1_w4: false,
+            has_midterm: false,
+            has_hifz: false
+          });
+        }
+      });
+      const subRows = Array.from(subMap.values());
+      if (subRows.length > 0) {
+        await supabase
+          .from('subject_assignments')
+          .upsert(subRows, { onConflict: 'class_name,subject_name', ignoreDuplicates: true });
+        syncedCount = subRows.length;
+      }
+    }
     setUploading(false);
-    if (error) return setMsg('Upload error: ' + error.message);
 
     setParsedRows([]);
     setShowExcelBox(false);
-    setMsg(`Successfully uploaded ${payload.length} syllabus topics for ${uploadClass}!`);
+    setMsg(`Uploaded ${payload.length} syllabus topics for ${uploadClass}${syncedCount ? ` & synced ${syncedCount} subjects` : ''}!`);
     loadAll();
   }
 
@@ -301,6 +330,31 @@ export default function SyllabusModule({ onBack, user }) {
     setForm(f => ({ ...f, topic: '', subtopics: '', resource_url: '' }));
     setShowAddForm(false);
     setMsg(`Added ${data.week_label} topic for ${data.class_name} - ${data.subject}`);
+  }
+
+  function handleExportSyllabusExcel() {
+    const source = filterClass && filterClass !== 'ALL'
+      ? items.filter(x => x.class_name === filterClass)
+      : items;
+    if (!source || source.length === 0) {
+      return setMsg('No syllabus items to export.');
+    }
+    const rows = source.map(r => ({
+      Class: r.class_name || '',
+      Subject: r.subject || '',
+      Code: r.code || '',
+      Textbook: r.textbook || '',
+      'Periods/week': r.periods_per_week || '',
+      Weeks: r.week_label || (r.week_no === r.week_end ? `Week ${r.week_no}` : `Weeks ${r.week_no}-${r.week_end}`),
+      Topic: r.topic || '',
+      Teacher: r.teacher_name || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Syllabus');
+    const tag = filterClass && filterClass !== 'ALL' ? filterClass.replace(/[^a-zA-Z0-9_-]/g, '_') : 'All_Classes';
+    XLSX.writeFile(wb, `Syllabus_${tag}.xlsx`);
+    setMsg(`Exported ${rows.length} syllabus topics (${tag}).`);
   }
 
   function handleDownloadTemplate() {
@@ -482,6 +536,7 @@ export default function SyllabusModule({ onBack, user }) {
             <input type="checkbox" checked={replaceExisting} onChange={e => setReplaceExisting(e.target.checked)} />
             Replace existing syllabus for this class
           </label>
+            <label style={{ fontSize: 12, color: '#334155', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 4 }}><input type="checkbox" checked={autoSyncSubjects} onChange={e => setAutoSyncSubjects(e.target.checked)} /> Auto-add subjects to Staff Assignments (CCE/Midterm OFF)</label>
           {parsedRows.length > 0 && (
             <button onClick={handleBulkUpload} disabled={uploading} style={{ padding: 10, borderRadius: 9, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
               {uploading ? 'Uploading...' : `Upload ${parsedRows.length} Topics to ${uploadClass || 'Class'}`}

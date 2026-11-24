@@ -23,7 +23,7 @@ function parseWeekRange(raw) {
 }
 
 export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
-  const [mode, setMode] = useState('subjects'); // 'subjects' | 'syllabus' | 'report'
+  const [mode, setMode] = useState('subjects'); // 'subjects' | 'report'
   const [classes, setClasses] = useState([]);
   const [staffList, setStaffList] = useState([]);
 
@@ -561,7 +561,7 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
   return (
     <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 14, padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Clean 3-Tab Switcher */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, background: '#e2e8f0', padding: 3, borderRadius: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4, background: '#e2e8f0', padding: 3, borderRadius: 10 }}>
         <button
           type="button"
           onClick={() => { setMode('subjects'); onModeChange && onModeChange('subjects'); onModeChange && onModeChange('subjects'); setStatus(''); }}
@@ -571,7 +571,7 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
         </button>
         <button
           type="button"
-          onClick={() => { setMode('syllabus'); onModeChange && onModeChange('syllabus'); onModeChange && onModeChange('syllabus'); setStatus(''); }}
+          onClick={() => { setMode('subjects'); onModeChange && onModeChange('subjects'); onModeChange && onModeChange('syllabus'); setStatus(''); }}
           style={{ padding: '7px 6px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, background: mode === 'syllabus' ? '#fff' : 'transparent', color: mode === 'syllabus' ? '#1e3a8a' : '#475569', boxShadow: mode === 'syllabus' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}
         >
           <BookOpen size={13} /> Syllabus
@@ -628,49 +628,6 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
               )}
             </div>
           </div>
-        </>
-      )}
-
-      {mode === 'syllabus' && (
-        <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>Upload / Export Syllabus (Teacher Optional)</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              <button type="button" onClick={handleDownloadSylTemplate} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
-                📥 Template (.xlsx)
-              </button>
-              <button type="button" onClick={handleDownloadSyllabus} disabled={busy} style={{ padding: '5px 9px', borderRadius: 7, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                <Download size={12} /> Export {sylClass || 'All'}
-              </button>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select value={sylClass} onChange={e => setSylClass(e.target.value)} style={{ flex: 1, minWidth: 140, padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
-              <option value="">Select Class (e.g. S1, D1)</option>
-              {classes.map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <input type="file" accept=".xlsx,.xls,.csv" onChange={handleSylFileChange} style={{ fontSize: 11.5, maxWidth: '100%' }} />
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <label style={{ fontSize: 11.5, color: '#334155', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-              <input type="checkbox" checked={autoSyncSub} onChange={e => setAutoSyncSub(e.target.checked)} />
-              Auto-add subjects to Staff Assignments (CCE/Midterm OFF)
-            </label>
-            <label style={{ fontSize: 11.5, color: '#334155', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
-              <input type="checkbox" checked={replaceSyl} onChange={e => setReplaceSyl(e.target.checked)} />
-              Replace existing syllabus for selected class
-            </label>
-          </div>
-
-          {parsedSylRows.length > 0 && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <button type="button" onClick={handleBulkUploadSyllabus} disabled={busy} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                <Upload size={13} /> {busy ? 'Uploading...' : `Upload ${parsedSylRows.length} Syllabus Topics`}
-              </button>
-            </div>
-          )}
         </>
       )}
 
