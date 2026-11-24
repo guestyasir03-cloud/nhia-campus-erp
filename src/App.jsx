@@ -56,6 +56,10 @@ const SUB_MENUS = {
   activity: ['Single entry', 'Class-wise bulk entry', 'Reasons and categories', 'Class ranking', 'Discipline report']
 };
 
+function LazyFallback() {
+  return <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#475569", fontWeight: 600 }}>Loading...</div>;
+}
+
 export default function App() {
   const [user, setUser] = useState(() => {
     try { return JSON.parse(localStorage.getItem('nhia_logged_user') || 'null'); } catch { return null; }
@@ -735,7 +739,7 @@ export default function App() {
           const Icon = t.icon;
           const active = activeTab === t.id && !activeModule;
           return (
-    <Suspense fallback={<div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#475569", fontWeight: 600 }}>Loading...</div>}>
+    <Suspense fallback={<LazyFallback />}>
       <button
               key={t.id}
               onClick={() => { setActiveTab(t.id); setActiveModule(null); }}
