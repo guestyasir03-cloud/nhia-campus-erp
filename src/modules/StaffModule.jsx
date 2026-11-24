@@ -3,6 +3,7 @@ import {
   ChevronLeft, UserCheck, Trash2, Save, BookOpen, Plus
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import ClassSubjectsExcelBar from '../components/ClassSubjectsExcelBar';
 import { clearClassAccessCache } from '../lib/useClassAccess';
 
 export default function StaffModule({ onBack }) {
@@ -314,6 +315,7 @@ export default function StaffModule({ onBack }) {
       {/* TAB 3: CLASS-WISE SUBJECTS, TEACHERS & EXAM CONFIG (W1-W4 / MIDTERM) */}
       {tab === 'subjects' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <ClassSubjectsExcelBar onDone={() => loadAll()} />
           <select
             value={subClass}
             onChange={e => loadClassSubjects(e.target.value)}
