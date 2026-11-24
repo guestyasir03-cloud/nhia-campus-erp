@@ -1092,6 +1092,7 @@ export default function LeaveModule({ user, onBack }) {
             <button onClick={() => exportReportPDF('leave-report-print', `Leave_Report_${filterClass}`)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>PDF</button>
             <button onClick={handleCopyWhatsAppReport} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#0f766e', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{copiedWA ? '✅ Copied!' : '📋 Copy WhatsApp'}</button>
             <button onClick={handleExportCSV} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Excel / CSV</button>
+            <button type="button" onClick={() => exportReportJPEG('leave-report-print', `Leave_Report_${filterClass || 'All'}`)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#0284c7', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>JPEG</button>
           </div>
 
           <div id="leave-report-print" style={{ overflowX: 'auto' }}>
