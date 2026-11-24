@@ -8,10 +8,14 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          supabase: ['@supabase/supabase-js'],
-          icons: ['lucide-react']
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('@supabase')) return 'supabase';
+            if (id.includes('lucide-react')) return 'icons';
+            if (id.includes('xlsx')) return 'xlsx';
+            if (id.includes('html2pdf')) return 'html2pdf';
+            return 'vendor';
+          }
         }
       }
     }
