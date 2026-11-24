@@ -486,6 +486,8 @@ export default function FeedbackModule({ onBack, user }) {
               Feedback portal is currently closed by Admin.
             </div>
 
+          )}
+
           {/* Top Identity & Class Card */}
           <div style={{ background: 'linear-gradient(135deg, #2e44d2 0%, #4338ca 100%)', padding: 16, borderRadius: 16, color: '#fff', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, background: 'rgba(255,255,255,0.14)', padding: '8px 10px', borderRadius: 10 }}>
