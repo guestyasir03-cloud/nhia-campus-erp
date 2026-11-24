@@ -477,6 +477,50 @@ export default function SyllabusModule({ onBack, user }) {
 
   return (
     <div style={{ padding: 14, maxWidth: 740, margin: '0 auto', paddingBottom: 90, boxSizing: 'border-box' }}>
+      {/* Syllabus Excel Upload / Export / Delete Tools */}
+      <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 12, padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>Syllabus Excel & Class Tools</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button type="button" onClick={handleDownloadTemplate} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              📥 Template (.xlsx)
+            </button>
+            <button type="button" onClick={handleExportSyllabusExcel} style={{ padding: '5px 9px', borderRadius: 7, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              📤 Export (.xlsx)
+            </button>
+            <button type="button" onClick={() => handleBulkDelete(uploadClass || filterClass)} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+              🗑️ Delete {uploadClass || (filterClass !== 'ALL' ? filterClass : 'All')}
+            </button>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          <select value={uploadClass} onChange={e => setUploadClass(e.target.value)} style={{ flex: 1, minWidth: 140, padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+            <option value="">Select Class for Excel (e.g. S1, D1)</option>
+            {allClasses.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <input type="file" accept=".xlsx,.xls,.csv" onChange={handleExcelFile} style={{ fontSize: 11.5, maxWidth: '100%' }} />
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <label style={{ fontSize: 11.5, color: '#334155', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+              <input type="checkbox" checked={autoSyncSubjects} onChange={e => setAutoSyncSubjects(e.target.checked)} />
+              Auto-add subjects to Staff Assignments (CCE/Midterm OFF)
+            </label>
+            <label style={{ fontSize: 11.5, color: '#334155', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+              <input type="checkbox" checked={replaceExisting} onChange={e => setReplaceExisting(e.target.checked)} />
+              Replace existing syllabus for selected class
+            </label>
+          </div>
+          {parsedRows.length > 0 && (
+            <button type="button" onClick={handleBulkUpload} disabled={uploading} style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+              {uploading ? 'Uploading...' : `⬆️ Upload ${parsedRows.length} Topics`}
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
