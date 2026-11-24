@@ -629,8 +629,7 @@ export default function LeaveModule({ user, onBack }) {
         lines.push(`${idx + 1}. ${cells.join(' | ')}`);
       }
     });
-    const text = lines.join('
-');
+    const text = lines.join('\n');
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(() => {
         setCopiedWA(true);
