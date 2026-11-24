@@ -91,6 +91,7 @@ export default function ExamsModule({ onBack, user }) {
     const { data, error } = await supabase
       .from('subject_assignments')
       .select('*')
+      .or('has_w1_w4.eq.true,has_midterm.eq.true,has_hifz.eq.true')
       .order('class_name')
       .order('subject_name');
 
@@ -333,7 +334,8 @@ export default function ExamsModule({ onBack, user }) {
     const { data: assignedSubs } = await supabase
       .from('subject_assignments')
       .select('subject_name')
-      .eq('class_name', st.class_name);
+      .eq('class_name', st.class_name)
+      .or('has_w1_w4.eq.true,has_midterm.eq.true,has_hifz.eq.true');
 
     setLoading(false);
 
