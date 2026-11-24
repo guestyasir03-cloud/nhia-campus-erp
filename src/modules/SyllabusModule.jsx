@@ -19,6 +19,7 @@ function parseWeekRange(raw) {
 }
 
 export default function SyllabusModule({ onBack, user }) {
+  const isSyllabusAdminOnly = ['admin', 'super_admin'].includes(String(user?.role || '').toLowerCase());
   const isAdmin = ['admin', 'coordinator'].includes(user?.role);
   const isTeacher = user?.role === 'teacher';
   const isStudent = user?.role === 'student';
@@ -478,7 +479,8 @@ export default function SyllabusModule({ onBack, user }) {
   return (
     <div style={{ padding: 14, maxWidth: 740, margin: '0 auto', paddingBottom: 90, boxSizing: 'border-box' }}>
       {/* Syllabus Excel Upload / Export / Delete Tools */}
-      <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 12, padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {isSyllabusAdminOnly && (
+        <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 12, padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
           <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>Syllabus Excel & Class Tools</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -520,6 +522,7 @@ export default function SyllabusModule({ onBack, user }) {
           )}
         </div>
       </div>
+      )}
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, gap: 8, flexWrap: 'wrap' }}>
