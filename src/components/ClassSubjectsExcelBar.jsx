@@ -1,7 +1,12 @@
 ﻿import React, { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, Download } from 'lucide-react';
+import { Upload, Download, RefreshCw } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+
+function parseBool(v) {
+  const s = String(v || '').trim().toLowerCase();
+  return ['yes', 'true', '1', 'y', 'on'].includes(s);
+}
 
 export default function ClassSubjectsExcelBar({ onDone }) {
   const [classes, setClasses] = useState([]);
@@ -15,24 +20,79 @@ export default function ClassSubjectsExcelBar({ onDone }) {
 
   useEffect(() => {
     async function init() {
-      const [{ data: stCls }, { data: subCls }, { data: stf }] = await Promise.all([
+      const [{ data: stCls }, { data: subCls }, { data: sylCls }, { data: stf }] = await Promise.all([
         supabase.from('students').select('class_name'),
         supabase.from('subject_assignments').select('class_name'),
-        supabase.from('staff').select('id, name')
+        supabase.from('syllabus_weeks').select('class_name'),
+        supabase.from('staff').select('staff_id, name')
       ]);
       const clsSet = new Set();
       (stCls || []).forEach(r => r.class_name && clsSet.add(r.class_name));
       (subCls || []).forEach(r => r.class_name && clsSet.add(r.class_name));
+      (sylCls || []).forEach(r => r.class_name && clsSet.add(r.class_name));
       setClasses([...clsSet].sort());
       setStaffList(stf || []);
     }
     init();
   }, []);
 
+  // 1-Click Sync: Pull non-CCE / non-Midterm subjects from Syllabus into subject_assignments
+  async function handleSyncFromSyllabus() {
+    setBusy(true);
+    setStatus('');
+    let q = supabase.from('syllabus_weeks').select('class_name, subject');
+    if (selectedClass && selectedClass !== 'ALL') {
+      q = q.eq('class_name', selectedClass);
+    }
+    const { data: sylData, error: sylErr } = await q;
+    if (sylErr) {
+      setBusy(false);
+      return setStatus('Sync error: ' + sylErr.message);
+    }
+    if (!sylData || sylData.length === 0) {
+      setBusy(false);
+      return setStatus(`No syllabus subjects found for ${selectedClass === 'ALL' ? 'any class' : selectedClass}.`);
+    }
+
+    const uniqueMap = new Map();
+    sylData.forEach(r => {
+      const cls = String(r.class_name || '').trim();
+      const sub = String(r.subject || '').trim();
+      if (!cls || !sub) return;
+      const key = `${cls.toLowerCase()}|${sub.toLowerCase()}`;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, {
+          class_name: cls,
+          subject_name: sub,
+          staff_id: null,
+          staff_name: null,
+          has_w1_w4: false,
+          has_midterm: false,
+          has_hifz: false
+        });
+      }
+    });
+
+    const payload = Array.from(uniqueMap.values());
+    const { error: upErr } = await supabase
+      .from('subject_assignments')
+      .upsert(payload, { onConflict: 'class_name,subject_name', ignoreDuplicates: true });
+
+    setBusy(false);
+    if (upErr) return setStatus('Sync error: ' + upErr.message);
+
+    setStatus(`Synced ${payload.length} syllabus subjects (${selectedClass === 'ALL' ? 'All Classes' : selectedClass}) with CCE/Midterm OFF! Now assign teachers below.`);
+    if (onDone) onDone();
+  }
+
   async function handleDownloadSubjects() {
     setBusy(true);
     setStatus('');
-    let q = supabase.from('subject_assignments').select('class_name, subject_name, staff_name').order('class_name').order('subject_name');
+    let q = supabase
+      .from('subject_assignments')
+      .select('class_name, subject_name, staff_name, has_w1_w4, has_midterm, has_hifz')
+      .order('class_name')
+      .order('subject_name');
     if (selectedClass && selectedClass !== 'ALL') {
       q = q.eq('class_name', selectedClass);
     }
@@ -44,7 +104,10 @@ export default function ClassSubjectsExcelBar({ onDone }) {
     const rows = data.map(r => ({
       Class: r.class_name || '',
       Subject: r.subject_name || '',
-      Teacher: r.staff_name || ''
+      Teacher: r.staff_name || '',
+      CCE: r.has_w1_w4 ? 'Yes' : 'No',
+      Midterm: r.has_midterm ? 'Yes' : 'No',
+      Hifz: r.has_hifz ? 'Yes' : 'No'
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -56,9 +119,8 @@ export default function ClassSubjectsExcelBar({ onDone }) {
 
   function handleDownloadTemplate() {
     const sample = [
-      { Class: targetClass || 'S1', Subject: 'Malayalam', Teacher: '' },
-      { Class: targetClass || 'S1', Subject: 'English', Teacher: '' },
-      { Class: targetClass || 'S1', Subject: 'Mathematics', Teacher: '' }
+      { Class: targetClass || 'S1', Subject: 'Malayalam', Teacher: '', CCE: 'Yes', Midterm: 'Yes', Hifz: 'No' },
+      { Class: targetClass || 'S1', Subject: 'Quran Recitation', Teacher: '', CCE: 'No', Midterm: 'No', Hifz: 'No' }
     ];
     const ws = XLSX.utils.json_to_sheet(sample);
     const wb = XLSX.utils.book_new();
@@ -80,7 +142,16 @@ export default function ClassSubjectsExcelBar({ onDone }) {
           const subject_name = String(r.Subject || r.subject || r.subject_name || '').trim();
           const class_name = String(r.Class || r.class || r.class_name || '').trim();
           const staff_name = String(r.Teacher || r.teacher || r.staff_name || r.Staff || '').trim();
-          if (subject_name) rows.push({ class_name, subject_name, staff_name });
+          if (subject_name) {
+            rows.push({
+              class_name,
+              subject_name,
+              staff_name,
+              has_w1_w4: parseBool(r.CCE ?? r.cce ?? r.has_w1_w4 ?? 'No'),
+              has_midterm: parseBool(r.Midterm ?? r.midterm ?? r.has_midterm ?? 'No'),
+              has_hifz: parseBool(r.Hifz ?? r.hifz ?? r.has_hifz ?? 'No')
+            });
+          }
         });
         setParsedRows(rows);
         setStatus(`Ready to upload ${rows.length} subjects.`);
@@ -99,8 +170,11 @@ export default function ClassSubjectsExcelBar({ onDone }) {
       return {
         class_name: cls,
         subject_name: r.subject_name,
-        staff_name: stf ? stf.name : (r.staff_name || ''),
-        staff_id: stf ? stf.id : null
+        staff_name: stf ? stf.name : (r.staff_name || null),
+        staff_id: stf ? String(stf.staff_id) : null,
+        has_w1_w4: r.has_w1_w4,
+        has_midterm: r.has_midterm,
+        has_hifz: r.has_hifz
       };
     }).filter(r => r.class_name && r.subject_name);
 
@@ -116,7 +190,9 @@ export default function ClassSubjectsExcelBar({ onDone }) {
       }
     }
 
-    const { error } = await supabase.from('subject_assignments').insert(resolved);
+    const { error } = await supabase
+      .from('subject_assignments')
+      .upsert(resolved, { onConflict: 'class_name,subject_name' });
     setBusy(false);
     if (error) return setStatus('Upload error: ' + error.message);
 
@@ -128,20 +204,23 @@ export default function ClassSubjectsExcelBar({ onDone }) {
   return (
     <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 14, padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Class Subjects Excel (Download / Bulk Upload)</div>
+        <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>Class Subjects Manager (Sync / Excel)</div>
         <button type="button" onClick={handleDownloadTemplate} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
           📥 Template (.xlsx)
         </button>
       </div>
 
-      {/* Download Section */}
+      {/* Sync from Syllabus + Download Section */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, minWidth: 120, padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+        <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, minWidth: 110, padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
           <option value="ALL">All Classes</option>
           {classes.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <button type="button" onClick={handleDownloadSubjects} disabled={busy} style={{ padding: '8px 12px', borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <Download size={13} /> Download {selectedClass === 'ALL' ? 'All' : selectedClass} (.xlsx)
+        <button type="button" onClick={handleSyncFromSyllabus} disabled={busy} style={{ padding: '8px 11px', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <RefreshCw size={13} /> Sync from Syllabus
+        </button>
+        <button type="button" onClick={handleDownloadSubjects} disabled={busy} style={{ padding: '8px 11px', borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <Download size={13} /> Download (.xlsx)
         </button>
       </div>
 
