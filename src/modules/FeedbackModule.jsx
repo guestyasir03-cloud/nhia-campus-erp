@@ -66,6 +66,8 @@ export default function FeedbackModule({ onBack, user }) {
   const [setupFilterClass, setSetupFilterClass] = useState('ALL');
   const [fbRatingFilter, setFbRatingFilter] = useState('ALL');
   const [fbSortBy, setFbSortBy] = useState('newest');
+  const [reportSubTab, setReportSubTab] = useState('students');
+  const [expandedStudentKey, setExpandedStudentKey] = useState(null);
 
   // Report filters
   const [filterCycle, setFilterCycle] = useState('ACTIVE');
@@ -354,6 +356,32 @@ export default function FeedbackModule({ onBack, user }) {
     }));
     const uniqueStudents = new Set(visibleResponses.map(r => r.token_hash)).size;
     return { total: visibleResponses.length, avg, ratedCount: rated.length, uniqueStudents, dist };
+  }, [visibleResponses]);
+
+  
+  const groupedByStudent = useMemo(() => {
+    const map = {};
+    visibleResponses.forEach(r => {
+      const dt = r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '-';
+      const key = `${r.token_hash || r.identity || 'Anonymous'}__${r.class_name || ''}__${dt}`;
+      if (!map[key]) {
+        map[key] = {
+          key,
+          student: r.identity || 'Anonymous',
+          cls: r.class_name || '-',
+          date: dt,
+          items: [],
+          sum: 0,
+          rated: 0
+        };
+      }
+      map[key].items.push(r);
+      if (Number(r.rating) > 0) {
+        map[key].sum += Number(r.rating);
+        map[key].rated += 1;
+      }
+    });
+    return Object.values(map);
   }, [visibleResponses]);
 
   const teachersList = useMemo(() => [...new Set(responses.map(r => r.teacher_name))].sort(), [responses]);
@@ -750,56 +778,129 @@ export default function FeedbackModule({ onBack, user }) {
             </div>
           )}
 
-          {/* Teacher Leaderboard */}
-          <div style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
-              <Award size={15} color="#d97706" /> Teacher & Subject Ranking ({activeCycleName})
-            </div>
-            {summaryByTeacher.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#64748b' }}>No responses yet.</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {summaryByTeacher.map((s, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{i + 1}. {s.teacher}</div>
-                      <div style={{ fontSize: 11, color: '#64748b' }}>{s.cls} • {s.subject} ({s.total} responses)</div>
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 800, color: '#d97706', background: '#fef3c7', padding: '4px 9px', borderRadius: 8 }}>
-                      ⭐ {s.rated ? (s.sum / s.rated).toFixed(1) : '—'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+          {/* Clean 3-Tab Reports Sub-Navigation */}
+          <div style={{ display: 'flex', gap: 6, background: '#e2e8f0', padding: 4, borderRadius: 12 }}>
+            <button type="button" onClick={() => setReportSubTab('students')} style={{ flex: 1, padding: '8px 6px', borderRadius: 9, border: 'none', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', background: reportSubTab === 'students' ? '#ffffff' : 'transparent', color: reportSubTab === 'students' ? '#1e3a8a' : '#475569' }}>
+              👤 Student-wise ({groupedByStudent.length})
+            </button>
+            <button type="button" onClick={() => setReportSubTab('ranking')} style={{ flex: 1, padding: '8px 6px', borderRadius: 9, border: 'none', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', background: reportSubTab === 'ranking' ? '#ffffff' : 'transparent', color: reportSubTab === 'ranking' ? '#1e3a8a' : '#475569' }}>
+              🏆 Ranking ({summaryByTeacher.length})
+            </button>
+            <button type="button" onClick={() => setReportSubTab('all')} style={{ flex: 1, padding: '8px 6px', borderRadius: 9, border: 'none', fontSize: 11.5, fontWeight: 800, cursor: 'pointer', background: reportSubTab === 'all' ? '#ffffff' : 'transparent', color: reportSubTab === 'all' ? '#1e3a8a' : '#475569' }}>
+              📋 All ({visibleResponses.length})
+            </button>
           </div>
 
-          {/* Individual Comments */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {visibleResponses.map(r => (
-              <div key={r.id} style={{ background: '#fff', padding: 12, borderRadius: 12, border: '1px solid #e2e8f0' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: '#2e44d2' }}>
-                    {r.teacher_name} • {r.class_name} ({r.subject})
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {r.rating && <span style={{ fontSize: 11, fontWeight: 800, color: '#d97706' }}>⭐ {r.rating}/5</span>}
-                    {isAdmin && (
-                      <button onClick={() => handleDeleteResponse(r.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}>
-                        <Trash2 size={13} />
+          {/* SUB-TAB 1: STUDENT-WISE GROUPED ACCORDION */}
+          {reportSubTab === 'students' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {groupedByStudent.length === 0 ? (
+                <div style={{ background: '#fff', padding: 16, borderRadius: 12, border: '1px solid #e2e8f0', textAlign: 'center', fontSize: 12, color: '#64748b' }}>
+                  No submissions found.
+                </div>
+              ) : (
+                groupedByStudent.map(g => {
+                  const isOpen = expandedStudentKey === g.key;
+                  const avg = g.rated ? (g.sum / g.rated).toFixed(1) : '—';
+                  return (
+                    <div key={g.key} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => setExpandedStudentKey(isOpen ? null : g.key)}
+                        style={{ width: '100%', padding: '11px 12px', background: isOpen ? '#f8fafc' : '#fff', border: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', textAlign: 'left', gap: 8 }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{g.student}</div>
+                          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                            <span style={{ background: '#eef2ff', color: '#2e44d2', padding: '1px 6px', borderRadius: 5, fontWeight: 700, marginRight: 6 }}>{g.cls}</span>
+                            {g.items.length} Subjects • {g.date}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, fontWeight: 800, color: '#d97706', background: '#fef3c7', padding: '3px 8px', borderRadius: 8 }}>⭐ {avg}</span>
+                          <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{isOpen ? '▲' : '▼'}</span>
+                        </div>
                       </button>
-                    )}
-                  </div>
-                </div>
-                {r.liked && <div style={{ fontSize: 12, color: '#166534', marginBottom: 3 }}><b>Liked:</b> {r.liked}</div>}
-                {r.improve && <div style={{ fontSize: 12, color: '#991b1b', marginBottom: 3 }}><b>Improve:</b> {r.improve}</div>}
-                {r.other && <div style={{ fontSize: 12, color: '#334155', marginBottom: 3 }}><b>Other:</b> {r.other}</div>}
-                <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 4 }}>
-                  — {r.identity || 'Anonymous'} • {new Date(r.created_at).toLocaleDateString('en-IN')}
-                </div>
+
+                      {isOpen && (
+                        <div style={{ borderTop: '1px solid #e2e8f0', padding: 10, display: 'flex', flexDirection: 'column', gap: 6, background: '#f8fafc' }}>
+                          {g.items.map(r => (
+                            <div key={r.id} style={{ background: '#fff', padding: '9px 10px', borderRadius: 9, border: '1px solid #e2e8f0' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                <div style={{ fontSize: 12, fontWeight: 800, color: '#1e3a8a' }}>{r.teacher_name} • {r.subject}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  {r.rating && <span style={{ fontSize: 11, fontWeight: 800, color: '#d97706' }}>⭐ {r.rating}/5</span>}
+                                  {isAdmin && (
+                                    <button type="button" onClick={() => handleDeleteResponse(r.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}>
+                                      <Trash2 size={13} />
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              {r.liked && <div style={{ fontSize: 11.5, color: '#166534' }}><b>Liked:</b> {r.liked}</div>}
+                              {r.improve && <div style={{ fontSize: 11.5, color: '#991b1b' }}><b>Improve:</b> {r.improve}</div>}
+                              {r.other && <div style={{ fontSize: 11.5, color: '#334155' }}><b>Other:</b> {r.other}</div>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* SUB-TAB 2: TEACHER LEADERBOARD */}
+          {reportSubTab === 'ranking' && (
+            <div style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Award size={15} color="#d97706" /> Teacher & Subject Ranking ({activeCycleName})
               </div>
-            ))}
-          </div>
+              {summaryByTeacher.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#64748b' }}>No responses yet.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 420, overflowY: 'auto', paddingRight: 2 }}>
+                  {summaryByTeacher.map((s, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 10, background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                      <div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }}>{i + 1}. {s.teacher}</div>
+                        <div style={{ fontSize: 11, color: '#64748b' }}>{s.cls} • {s.subject} ({s.total} responses)</div>
+                      </div>
+                      <div style={{ fontSize: 12.5, fontWeight: 800, color: '#d97706', background: '#fef3c7', padding: '3px 8px', borderRadius: 8 }}>
+                        ⭐ {s.rated ? (s.sum / s.rated).toFixed(1) : '—'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* SUB-TAB 3: ALL INDIVIDUAL RESPONSES */}
+          {reportSubTab === 'all' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 480, overflowY: 'auto', paddingRight: 2 }}>
+              {visibleResponses.map(r => (
+                <div key={r.id} style={{ background: '#fff', padding: 10, borderRadius: 10, border: '1px solid #e2e8f0' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: '#2e44d2' }}>{r.teacher_name} • {r.class_name} ({r.subject})</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {r.rating && <span style={{ fontSize: 11, fontWeight: 800, color: '#d97706' }}>⭐ {r.rating}/5</span>}
+                      {isAdmin && (
+                        <button type="button" onClick={() => handleDeleteResponse(r.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}>
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {r.liked && <div style={{ fontSize: 11.5, color: '#166534' }}><b>Liked:</b> {r.liked}</div>}
+                  {r.improve && <div style={{ fontSize: 11.5, color: '#991b1b' }}><b>Improve:</b> {r.improve}</div>}
+                  {r.other && <div style={{ fontSize: 11.5, color: '#334155' }}><b>Other:</b> {r.other}</div>}
+                  <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 3 }}>— {r.identity || 'Anonymous'} • {new Date(r.created_at).toLocaleDateString('en-IN')}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
