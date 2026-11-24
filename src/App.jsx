@@ -549,7 +549,7 @@ export default function App() {
 
             {/* MODULE MANAGER WITH ROLE CHIPS */}
             <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Module Manager & Access</div>
-            {user?.role === 'teacher' && <TeacherCurrentWeekCard user={user} onOpenSyllabus={() => setActiveModule('syllabus')} />}
+{user?.role === 'teacher' && <TeacherCurrentWeekCard user={user} onOpenSyllabus={() => setActiveModule('syllabus')} />}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {modules.map(mod => {
                 const Icon = ICON_MAP[mod.icon] || Sliders;
