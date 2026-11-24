@@ -1242,7 +1242,7 @@ export default function LeaveModule({ user, onBack }) {
                               title="Undo Return (Mark Active)"
                               style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fde68a', background: '#fef3c7', color: '#b45309', cursor: 'pointer', marginRight: isAdmin ? 4 : 0, fontSize: 11, fontWeight: 800 }}
                             >
-                              ↩️
+                              Undo
                             </button>
                           )}
                           {isAdmin && (
