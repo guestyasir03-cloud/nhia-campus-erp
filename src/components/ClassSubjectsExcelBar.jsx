@@ -203,6 +203,115 @@ export default function ClassSubjectsExcelBar({ onDone }) {
     setStatus(`Downloaded ${rows.length} subjects (${tag}).`);
   }
 
+  async function handleDownloadSubjectsPDF() {
+    setBusy(true);
+    setStatus('');
+    let q = supabase
+      .from('subject_assignments')
+      .select('class_name, subject_name, staff_name, has_w1_w4, has_midterm, has_hifz')
+      .order('class_name')
+      .order('subject_name');
+    if (selectedClass && selectedClass !== 'ALL') q = q.eq('class_name', selectedClass);
+    const { data, error } = await q;
+    setBusy(false);
+    if (error) return setStatus('PDF error: ' + error.message);
+    if (!data || data.length === 0) return setStatus(`No subjects found for ${selectedClass === 'ALL' ? 'any class' : selectedClass}.`);
+
+    const container = document.createElement('div');
+    container.style.padding = '16px';
+    container.style.fontFamily = 'Arial, sans-serif';
+    container.style.color = '#0f172a';
+
+    const tagLabel = selectedClass === 'ALL' ? 'All Classes' : `Class ${selectedClass}`;
+    let html = `
+      <div style="text-align:center; border-bottom:2px solid #1e3a8a; padding-bottom:8px; margin-bottom:14px;">
+        <div style="font-size:16px; font-weight:800; color:#1e3a8a;">NOORUL HIDAYA ISLAMIC ACADEMY</div>
+        <div style="font-size:12px; font-weight:700; color:#334155; margin-top:2px;">Subjects & Teachers Assignment List — ${tagLabel}</div>
+        <div style="font-size:10.5px; color:#64748b; margin-top:2px;">Total: ${data.length} Subjects • Generated: ${new Date().toLocaleDateString('en-IN')}</div>
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:11px;">
+        <thead>
+          <tr style="background:#1e3a8a; color:#fff;">
+            <th style="padding:6px; border:1px solid #cbd5e1; text-align:left; width:35px;">#</th>
+            <th style="padding:6px; border:1px solid #cbd5e1; text-align:left; width:65px;">Class</th>
+            <th style="padding:6px; border:1px solid #cbd5e1; text-align:left;">Subject</th>
+            <th style="padding:6px; border:1px solid #cbd5e1; text-align:left;">Teacher</th>
+            <th style="padding:6px; border:1px solid #cbd5e1; text-align:left; width:110px;">Exam Mode</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    data.forEach((r, idx) => {
+      const modes = [r.has_w1_w4 ? 'CCE' : '', r.has_midterm ? 'Midterm' : '', r.has_hifz ? 'Hifz' : ''].filter(Boolean).join(', ') || 'Syllabus Only';
+      html += `
+        <tr style="background:${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+          <td style="padding:6px; border:1px solid #cbd5e1;">${idx + 1}</td>
+          <td style="padding:6px; border:1px solid #cbd5e1; font-weight:700;">${r.class_name || ''}</td>
+          <td style="padding:6px; border:1px solid #cbd5e1; font-weight:600;">${r.subject_name || ''}</td>
+          <td style="padding:6px; border:1px solid #cbd5e1; color:${r.staff_name ? '#0f172a' : '#dc2626'};">${r.staff_name || 'Unassigned'}</td>
+          <td style="padding:6px; border:1px solid #cbd5e1; color:#475569;">${modes}</td>
+        </tr>
+      `;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+
+    const fileTag = selectedClass === 'ALL' ? 'All_Classes' : selectedClass.replace(/[^a-zA-Z0-9_-]/g, '_');
+    html2pdf().set({
+      margin: 8,
+      filename: `NHIA_Subjects_Teachers_${fileTag}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    }).from(container).save();
+    setStatus(`Downloaded PDF for ${tagLabel} (${data.length} subjects).`);
+  }
+
+  async function handleCopySubjectsWA() {
+    setBusy(true);
+    setStatus('');
+    let q = supabase
+      .from('subject_assignments')
+      .select('class_name, subject_name, staff_name')
+      .order('class_name')
+      .order('subject_name');
+    if (selectedClass && selectedClass !== 'ALL') q = q.eq('class_name', selectedClass);
+    const { data, error } = await q;
+    setBusy(false);
+    if (error) return setStatus('Copy error: ' + error.message);
+    if (!data || data.length === 0) return setStatus(`No subjects found for ${selectedClass === 'ALL' ? 'any class' : selectedClass}.`);
+
+    const tagLabel = selectedClass === 'ALL' ? 'All Classes' : `Class ${selectedClass}`;
+    const lines = [
+      '📚 *NHIA SUBJECTS & TEACHERS*',
+      `*Class:* ${tagLabel} • *Total:* ${data.length}`,
+      ''
+    ];
+    data.forEach((r, i) => {
+      const clsPrefix = selectedClass === 'ALL' ? `[${r.class_name}] ` : '';
+      lines.push(`${i + 1}. ${clsPrefix}*${r.subject_name}* — ${r.staff_name || 'Unassigned'}`);
+    });
+    const text = lines.join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedWA(true);
+        setTimeout(() => setCopiedWA(false), 2000);
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopiedWA(true);
+      setTimeout(() => setCopiedWA(false), 2000);
+    }
+    setStatus(`Copied ${data.length} subjects for WhatsApp!`);
+  }
+
   function handleDownloadSubTemplate() {
     const sample = [
       { Class: targetClass || 'S1', Subject: 'Malayalam (മലയാളം)', Teacher: '', CCE: 'Yes', Midterm: 'Yes', Hifz: 'No' },
@@ -712,8 +821,14 @@ export default function ClassSubjectsExcelBar({ onDone }) {
             <button type="button" onClick={handleSyncFromSyllabus} disabled={busy} style={{ padding: '8px 11px', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <RefreshCw size={13} /> Sync from Syllabus
             </button>
-            <button type="button" onClick={handleDownloadSubjects} disabled={busy} style={{ padding: '8px 11px', borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <Download size={13} /> Download (.xlsx)
+            <button type="button" onClick={handleDownloadSubjects} disabled={busy} style={{ padding: '8px 10px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Download size={13} /> Excel
+            </button>
+            <button type="button" onClick={handleDownloadSubjectsPDF} disabled={busy} style={{ padding: '8px 10px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <FileText size={13} /> PDF
+            </button>
+            <button type="button" onClick={handleCopySubjectsWA} disabled={busy} style={{ padding: '8px 10px', borderRadius: 8, border: 'none', background: '#0f766e', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Copy size={13} /> {copiedWA ? 'Copied!' : 'WhatsApp'}
             </button>
           </div>
 
