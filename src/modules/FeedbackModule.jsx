@@ -468,6 +468,7 @@ export default function FeedbackModule({ onBack, user }) {
           <button onClick={() => setTab('setup')} style={{ flex: 1, padding: 9, borderRadius: 9, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: tab === 'setup' ? '#2e44d2' : 'transparent', color: tab === 'setup' ? '#fff' : '#475569' }}>
             Setup ({config.length})
           </button>
+        )}
       </div>
 
       {msg && (
