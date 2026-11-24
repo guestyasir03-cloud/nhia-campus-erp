@@ -273,6 +273,26 @@ export default function FeedbackModule({ onBack, user }) {
     setMsg(error ? 'Error: ' + error.message : 'Feedback settings saved!');
   }
 
+  
+  async function handleBulkDeleteFeedback(ids, label) {
+    if (!isAdmin) return;
+    if (!ids || ids.length === 0) return;
+    if (!window.confirm(`Delete ${ids.length} feedback entries (${label})? This cannot be undone.`)) return;
+    try {
+      const chunkSize = 100;
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const chunk = ids.slice(i, i + chunkSize);
+        const { error } = await supabase.from('feedback_responses').delete().in('id', chunk);
+        if (error) throw error;
+      }
+      const idSet = new Set(ids);
+      setResponses(prev => prev.filter(r => !idSet.has(r.id)));
+      setMsg(`Deleted ${ids.length} feedback entries (${label}).`);
+    } catch (err) {
+      alert('Bulk delete error: ' + err.message);
+    }
+  }
+
   async function handleDeleteResponse(id) {
     if (!window.confirm('Delete this feedback entry?')) return;
     setResponses(prev => prev.filter(r => r.id !== id));
@@ -774,6 +794,15 @@ export default function FeedbackModule({ onBack, user }) {
                 <button onClick={copyWhatsAppSummary} style={{ padding: '9px 10px', borderRadius: 8, border: 'none', background: '#25d366', color: '#fff', fontWeight: 700, fontSize: 11.5, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
                   <Copy size={14} /> WhatsApp
                 </button>
+                {isAdmin && visibleResponses.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleBulkDeleteFeedback(visibleResponses.map(r => r.id), 'Filtered View')}
+                    style={{ gridColumn: '1 / -1', padding: '9px 10px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontWeight: 800, fontSize: 11.5, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                  >
+                    <Trash2 size={14} /> Bulk Delete Filtered ({visibleResponses.length})
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -818,6 +847,16 @@ export default function FeedbackModule({ onBack, user }) {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ fontSize: 12, fontWeight: 800, color: '#d97706', background: '#fef3c7', padding: '3px 8px', borderRadius: 8 }}>⭐ {avg}</span>
+                          {isAdmin && (
+                            <span
+                              role="button"
+                              title="Delete all subjects of this submission"
+                              onClick={e => { e.stopPropagation(); handleBulkDeleteFeedback(g.items.map(x => x.id), g.student); }}
+                              style={{ color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 7, padding: '4px 6px', display: 'inline-flex', alignItems: 'center', cursor: 'pointer' }}
+                            >
+                              <Trash2 size={13} />
+                            </span>
+                          )}
                           <span style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>{isOpen ? '▲' : '▼'}</span>
                         </div>
                       </button>
