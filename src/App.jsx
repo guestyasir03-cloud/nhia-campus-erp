@@ -549,7 +549,6 @@ export default function App() {
 
             {/* MODULE MANAGER WITH ROLE CHIPS */}
             <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Module Manager & Access</div>
-{user?.role === 'teacher' && <TeacherCurrentWeekCard user={{ ...user, role: user?.role }} onOpenSyllabus={() => setActiveModule('syllabus')} />}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {modules.map(mod => {
                 const Icon = ICON_MAP[mod.icon] || Sliders;
@@ -691,6 +690,8 @@ export default function App() {
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Present today</div>
               </div>
             </div>
+            {activeRole === 'teacher' && <TeacherCurrentWeekCard user={{ ...user, role: activeRole }} onOpenSyllabus={() => setActiveModule('syllabus')} />}
+
 
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
