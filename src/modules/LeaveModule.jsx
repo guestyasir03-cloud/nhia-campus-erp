@@ -1176,7 +1176,7 @@ export default function LeaveModule({ user, onBack }) {
                                 <th style={{ padding: 7, textAlign: 'left' }}>Class</th>
                                 <th style={{ padding: 7, textAlign: 'left' }}>Duration</th>
                                 <th style={{ padding: 7, textAlign: 'left' }}>Status</th>
-                                {isAdmin && <th style={{ padding: 7, textAlign: 'center' }}>Action</th>}
+                                <th style={{ padding: 7, textAlign: 'center' }}>Action</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1218,7 +1218,7 @@ export default function LeaveModule({ user, onBack }) {
                     <th style={{ padding: 7, textAlign: 'left' }}>Class</th>
                     <th style={{ padding: 7, textAlign: 'left' }}>Duration</th>
                     <th style={{ padding: 7, textAlign: 'left' }}>Status</th>
-                    {isAdmin && <th style={{ padding: 7, textAlign: 'center' }}>Action</th>}
+                    <th style={{ padding: 7, textAlign: 'center' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1234,18 +1234,18 @@ export default function LeaveModule({ user, onBack }) {
                         <td style={{ padding: 7, fontWeight: 700, color: isLeaveOverdue(r) ? '#dc2626' : r.status === 'Active' ? '#2e44d2' : '#16a34a' }}>
                           {isLeaveOverdue(r) ? 'Overdue' : r.status}
                         </td>
-                        {isAdmin && (
-                          <td style={{ padding: 7, textAlign: 'center', whiteSpace: 'nowrap' }}>
-                            {r.status === 'Returned' && (
-                              <button
-                                type="button"
-                                onClick={() => handleReopenLeave([r.id], r.student_name || 'Student')}
-                                title="Undo Return (Mark Active)"
-                                style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fde68a', background: '#fef3c7', color: '#b45309', cursor: 'pointer', marginRight: 4, fontSize: 11, fontWeight: 800 }}
-                              >
-                                ↩️
-                              </button>
-                            )}
+                        <td style={{ padding: 7, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {r.status === 'Returned' && (
+                            <button
+                              type="button"
+                              onClick={() => handleReopenLeave([r.id], r.student_name || 'Student')}
+                              title="Undo Return (Mark Active)"
+                              style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fde68a', background: '#fef3c7', color: '#b45309', cursor: 'pointer', marginRight: isAdmin ? 4 : 0, fontSize: 11, fontWeight: 800 }}
+                            >
+                              ↩️
+                            </button>
+                          )}
+                          {isAdmin && (
                             <button
                               onClick={() => handleDeleteLeave(r)}
                               title="Delete Record"
@@ -1253,8 +1253,8 @@ export default function LeaveModule({ user, onBack }) {
                             >
                               <Trash2 size={13} />
                             </button>
-                          </td>
-                        )}
+                          )}
+                        </td>
                       </tr>
                     ))
                   )}
@@ -1322,7 +1322,7 @@ export default function LeaveModule({ user, onBack }) {
                           <th style={{ padding: 6, textAlign: 'left' }}>Duration</th>
                           <th style={{ padding: 6, textAlign: 'left' }}>Issued By</th>
                           <th style={{ padding: 6, textAlign: 'left' }}>Status</th>
-                          {isAdmin && <th style={{ padding: 6, textAlign: 'center' }}>Action</th>}
+                          <th style={{ padding: 6, textAlign: 'center' }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
