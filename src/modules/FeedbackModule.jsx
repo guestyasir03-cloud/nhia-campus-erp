@@ -64,6 +64,8 @@ export default function FeedbackModule({ onBack, user }) {
   const [cfgSubject, setCfgSubject] = useState('');
   const [cfgTeacher, setCfgTeacher] = useState('');
   const [setupFilterClass, setSetupFilterClass] = useState('ALL');
+  const [fbRatingFilter, setFbRatingFilter] = useState('ALL');
+  const [fbSortBy, setFbSortBy] = useState('newest');
 
   // Report filters
   const [filterCycle, setFilterCycle] = useState('ACTIVE');
@@ -709,6 +711,19 @@ export default function FeedbackModule({ onBack, user }) {
               <div style={{ position: 'relative' }}>
                 <Search size={14} color="#94a3b8" style={{ position: 'absolute', left: 10, top: 10 }} />
                 <input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search teacher, subject, or comment..." style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px 8px 30px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+              <select value={fbRatingFilter} onChange={e => setFbRatingFilter(e.target.value)} style={{ flex: 1, minWidth: 120, padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+                <option value="ALL">All Ratings</option>
+                <option value="5">5 ★ Only</option>
+                <option value="4">4 ★ & above</option>
+                <option value="low">3 ★ & below (Needs Attention)</option>
+              </select>
+              <select value={fbSortBy} onChange={e => setFbSortBy(e.target.value)} style={{ flex: 1, minWidth: 120, padding: '7px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+                <option value="newest">Sort: Newest</option>
+                <option value="highest">Sort: Highest Rating</option>
+                <option value="lowest">Sort: Lowest Rating</option>
+              </select>
+            </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
