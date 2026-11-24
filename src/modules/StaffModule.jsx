@@ -7,7 +7,8 @@ import ClassSubjectsExcelBar from '../components/ClassSubjectsExcelBar';
 import { clearClassAccessCache } from '../lib/useClassAccess';
 
 export default function StaffModule({ onBack }) {
-  const [tab, setTab] = useState('directory'); // directory | class_teachers | subjects | add
+  const [tab, setTab] = useState('directory');
+  const [subMode, setSubMode] = useState('subjects'); // directory | class_teachers | subjects | add
   const [staffList, setStaffList] = useState([]);
   const [classes, setClasses] = useState([]);
   const [classTeachers, setClassTeachers] = useState([]);
@@ -347,7 +348,9 @@ export default function StaffModule({ onBack }) {
       {/* TAB 3: CLASS-WISE SUBJECTS, TEACHERS & EXAM CONFIG (W1-W4 / MIDTERM) */}
       {tab === 'subjects' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <ClassSubjectsExcelBar onDone={() => loadAll()} />
+          <ClassSubjectsExcelBar onDone={() => loadAll()}  onModeChange={setSubMode} />
+          {subMode === 'subjects' && (
+            <>
           <select
             value={subClass}
             onChange={e => loadClassSubjects(e.target.value)}
@@ -464,6 +467,8 @@ export default function StaffModule({ onBack }) {
                 )}
               </div>
             </>
+          )}
+        </>
           )}
         </div>
       )}
