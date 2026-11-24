@@ -20,6 +20,7 @@ import LeaveModule from './modules/LeaveModule';
 import FeedbackModule from './modules/FeedbackModule';
 import GadgetRegistryModule from './modules/GadgetRegistryModule';
 import ChangePasswordBox from './components/ChangePasswordBox';
+import TeacherCurrentWeekCard from './components/TeacherCurrentWeekCard';
 import YearResetPanel from './components/YearResetPanel';
 const ICON_MAP = {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
@@ -553,7 +554,8 @@ export default function App() {
                 const Icon = ICON_MAP[mod.icon] || Sliders;
                 const activeRoles = Array.isArray(mod.visible_roles) ? mod.visible_roles : [];
                 return (
-                  <div key={mod.id} style={{ background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+                  {user?.role === 'teacher' && <TeacherCurrentWeekCard user={user} onOpenSyllabus={() => setActiveModule('syllabus')} />}
+            <div key={mod.id} style={{ background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <div style={{ width: 36, height: 36, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center' }}>
