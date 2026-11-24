@@ -476,6 +476,8 @@ export default function FeedbackModule({ onBack, user }) {
           {msg}
         </div>
 
+      )}
+
       {/* TAB 1: ATTRACTIVE STUDENT SUBMIT FLOW */}
       {tab === 'submit' && (
         <form onSubmit={handleSubmitFeedback} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
