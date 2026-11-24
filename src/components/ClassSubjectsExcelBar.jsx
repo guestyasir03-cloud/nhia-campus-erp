@@ -210,9 +210,17 @@ export default function ClassSubjectsExcelBar({ onDone }) {
       }
     }
 
+    // Deduplicate by class_name + subject_name to prevent ON CONFLICT error
+    const dedupMap = new Map();
+    resolved.forEach(r => {
+      const k = `${r.class_name.toLowerCase()}|${r.subject_name.toLowerCase()}`;
+      dedupMap.set(k, r);
+    });
+    const uniqueResolved = Array.from(dedupMap.values());
+
     const { error } = await supabase
       .from('subject_assignments')
-      .upsert(resolved, { onConflict: 'class_name,subject_name' });
+      .upsert(uniqueResolved, { onConflict: 'class_name,subject_name' });
     setBusy(false);
     if (error) return setStatus('Upload error: ' + error.message);
 
