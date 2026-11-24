@@ -1,27 +1,27 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
   Briefcase, Bell, BarChart3, Sliders, Home, User, ChevronLeft,
   LogOut, Building, Library, Plus, X
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
-import StudentsModule from './modules/StudentsModule';
-import ExamsModule from './modules/ExamsModule';
-import AttendanceModule from './modules/AttendanceModule';
-import FinanceModule from './modules/FinanceModule';
-import ActivityModule from './modules/ActivityModule';
-import SyllabusModule from './modules/SyllabusModule';
-import StaffAppraisalModule from './modules/StaffAppraisalModule';
-import AnnouncementsModule from './modules/AnnouncementsModule';
-import StaffModule from './modules/StaffModule';
-import UserPasswordsPanel from './components/UserPasswordsPanel';
-import ReportsModule from './modules/ReportsModule';
-import LeaveModule from './modules/LeaveModule';
-import FeedbackModule from './modules/FeedbackModule';
-import GadgetRegistryModule from './modules/GadgetRegistryModule';
-import ChangePasswordBox from './components/ChangePasswordBox';
-import TeacherCurrentWeekCard from './components/TeacherCurrentWeekCard';
-import YearResetPanel from './components/YearResetPanel';
+const StudentsModule = lazy(() => import('./modules/StudentsModule'));
+const ExamsModule = lazy(() => import('./modules/ExamsModule'));
+const AttendanceModule = lazy(() => import('./modules/AttendanceModule'));
+const FinanceModule = lazy(() => import('./modules/FinanceModule'));
+const ActivityModule = lazy(() => import('./modules/ActivityModule'));
+const SyllabusModule = lazy(() => import('./modules/SyllabusModule'));
+const StaffAppraisalModule = lazy(() => import('./modules/StaffAppraisalModule'));
+const AnnouncementsModule = lazy(() => import('./modules/AnnouncementsModule'));
+const StaffModule = lazy(() => import('./modules/StaffModule'));
+const UserPasswordsPanel = lazy(() => import('./components/UserPasswordsPanel'));
+const ReportsModule = lazy(() => import('./modules/ReportsModule'));
+const LeaveModule = lazy(() => import('./modules/LeaveModule'));
+const FeedbackModule = lazy(() => import('./modules/FeedbackModule'));
+const GadgetRegistryModule = lazy(() => import('./modules/GadgetRegistryModule'));
+const ChangePasswordBox = lazy(() => import('./components/ChangePasswordBox'));
+const TeacherCurrentWeekCard = lazy(() => import('./components/TeacherCurrentWeekCard'));
+const YearResetPanel = lazy(() => import('./components/YearResetPanel'));
 const ICON_MAP = {
   FileText, Calendar, Users, Wallet, Star, BookOpen, Award,
   Briefcase, Bell, BarChart3, Sliders, Library, Building
@@ -735,7 +735,8 @@ export default function App() {
           const Icon = t.icon;
           const active = activeTab === t.id && !activeModule;
           return (
-            <button
+    <Suspense fallback={<div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#475569", fontWeight: 600 }}>Loading...</div>}>
+      <button
               key={t.id}
               onClick={() => { setActiveTab(t.id); setActiveModule(null); }}
               style={{ background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', color: active ? '#2e44d2' : '#64748b', fontWeight: active ? 700 : 500, fontSize: 11 }}
@@ -747,5 +748,6 @@ export default function App() {
         })}
       </nav>
     </div>
+    </Suspense>
   );
 }

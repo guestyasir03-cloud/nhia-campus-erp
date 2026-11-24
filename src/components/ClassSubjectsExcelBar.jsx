@@ -1,6 +1,5 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import html2pdf from 'html2pdf.js';
 import { Upload, Download, RefreshCw, Layers, Users, FileText, Copy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
