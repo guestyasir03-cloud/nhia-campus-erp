@@ -119,6 +119,38 @@ export default function StaffModule({ onBack }) {
     supabase.from('subject_assignments').update({ staff_id: sId, staff_name: sName }).eq('id', sub.id).then();
   }
 
+  // Optimistic Inline Subject Name Edit (Instant, Zero Lag + Syncs Syllabus)
+  async function renameSubject(sub) {
+    const next = window.prompt('Edit Subject Name:', sub.subject_name || '');
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === sub.subject_name) return;
+
+    const prevName = sub.subject_name;
+    setClassSubjects(prev => prev.map(item => item.id === sub.id ? { ...item, subject_name: trimmed } : item));
+
+    const { error } = await supabase
+      .from('subject_assignments')
+      .update({ subject_name: trimmed })
+      .eq('id', sub.id);
+
+    if (error) {
+      setClassSubjects(prev => prev.map(item => item.id === sub.id ? { ...item, subject_name: prevName } : item));
+      alert('Rename error: ' + error.message);
+      return;
+    }
+
+    // Keep syllabus_weeks in sync if old name existed there
+    if (prevName && sub.class_name) {
+      supabase
+        .from('syllabus_weeks')
+        .update({ subject: trimmed })
+        .eq('class_name', sub.class_name)
+        .eq('subject', prevName)
+        .then();
+    }
+  }
+
   async function deleteSubject(id, name) {
     if (!window.confirm(`Remove ${name} from ${subClass}?`)) return;
     setClassSubjects(prev => prev.filter(s => s.id !== id));
