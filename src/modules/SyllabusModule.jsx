@@ -492,14 +492,14 @@ export default function SyllabusModule({ onBack, user }) {
 
       {/* Filters & Current Week Selector */}
       <div style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: isStudent ? '1fr' : '1fr 1fr', gap: 8 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isStudent ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
           {!isStudent && (
-            <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterSubject('ALL'); }} style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+            <select value={filterClass} onChange={e => { setFilterClass(e.target.value); setFilterSubject('ALL'); }} style={{ width: '100%', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
               <option value="ALL">All Classes</option>
               {allClasses.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           )}
-          <select value={filterSubject} onChange={e => setFilterSubject(e.target.value)} style={{ padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+          <select value={filterSubject} onChange={e => setFilterSubject(e.target.value)} style={{ width: '100%', minWidth: 0, maxWidth: '100%', boxSizing: 'border-box', padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
             <option value="ALL">All Subjects</option>
             {availableSubjects.map(s => <option key={s} value={s}>{s}</option>)}
           </select>

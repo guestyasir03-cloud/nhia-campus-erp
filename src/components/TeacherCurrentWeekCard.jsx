@@ -6,6 +6,7 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
   const [weekNo, setWeekNo] = useState(1);
   const [topics, setTopics] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (user?.role !== 'teacher') return;
@@ -76,10 +77,14 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
 
   return (
     <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0', padding: 14, marginBottom: 14, boxShadow: '0 2px 8px rgba(15,23,42,0.04)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#38a116', color: '#fff', fontSize: 11.5, fontWeight: 800, padding: '5px 12px', borderRadius: 99, letterSpacing: 0.3 }}>
-          📍 CURRENT {weekLabel.toUpperCase()}
-        </span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: expanded ? 10 : 0, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#38a116', color: '#fff', border: 'none', fontSize: 11.5, fontWeight: 800, padding: '6px 12px', borderRadius: 99, letterSpacing: 0.3, cursor: 'pointer' }}
+        >
+          📍 CURRENT {weekLabel.toUpperCase()} {!loading && topics.length > 0 ? `(${topics.length})` : ''} {expanded ? '▴' : '▾'}
+        </button>
         <button
           type="button"
           onClick={onOpenSyllabus}
@@ -89,7 +94,7 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
         </button>
       </div>
 
-      {loading ? (
+      {expanded && (loading ? (
         <div style={{ fontSize: 12, color: '#64748b', padding: '6px 2px' }}>Loading your syllabus...</div>
       ) : topics.length === 0 ? (
         <div style={{ fontSize: 12, color: '#64748b', padding: '6px 2px' }}>
@@ -129,7 +134,7 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
             </div>
           ))}
         </div>
-      )}
+      ))}
     </div>
   );
 }
