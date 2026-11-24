@@ -22,7 +22,7 @@ function parseWeekRange(raw) {
   };
 }
 
-export default function ClassSubjectsExcelBar({ onDone }) {
+export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
   const [mode, setMode] = useState('subjects'); // 'subjects' | 'syllabus' | 'report'
   const [classes, setClasses] = useState([]);
   const [staffList, setStaffList] = useState([]);
@@ -564,21 +564,21 @@ export default function ClassSubjectsExcelBar({ onDone }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 4, background: '#e2e8f0', padding: 3, borderRadius: 10 }}>
         <button
           type="button"
-          onClick={() => { setMode('subjects'); setStatus(''); }}
+          onClick={() => { setMode('subjects'); onModeChange && onModeChange('subjects'); setStatus(''); }}
           style={{ padding: '7px 6px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, background: mode === 'subjects' ? '#fff' : 'transparent', color: mode === 'subjects' ? '#1e3a8a' : '#475569', boxShadow: mode === 'subjects' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}
         >
           <Layers size={13} /> Subjects
         </button>
         <button
           type="button"
-          onClick={() => { setMode('syllabus'); setStatus(''); }}
+          onClick={() => { setMode('syllabus'); onModeChange && onModeChange('syllabus'); setStatus(''); }}
           style={{ padding: '7px 6px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, background: mode === 'syllabus' ? '#fff' : 'transparent', color: mode === 'syllabus' ? '#1e3a8a' : '#475569', boxShadow: mode === 'syllabus' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}
         >
           <BookOpen size={13} /> Syllabus
         </button>
         <button
           type="button"
-          onClick={() => { setMode('report'); setStatus(''); }}
+          onClick={() => { setMode('report'); onModeChange && onModeChange('report'); setStatus(''); }}
           style={{ padding: '7px 6px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, background: mode === 'report' ? '#fff' : 'transparent', color: mode === 'report' ? '#1e3a8a' : '#475569', boxShadow: mode === 'report' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}
         >
           <Users size={13} /> Staff Report
