@@ -606,6 +606,48 @@ export default function LeaveModule({ user, onBack }) {
     await supabase.from('student_leaves').delete().eq('id', item.id);
   }
 
+  const [copiedWA, setCopiedWA] = useState(false);
+
+  function handleCopyWhatsAppReport() {
+    const rows = Array.from(document.querySelectorAll('#leave-report-print table tbody tr'));
+    if (rows.length === 0) {
+      alert('No leave records in table to copy.');
+      return;
+    }
+    const lines = [
+      '📋 *NHIA LEAVE REPORT*',
+      `*Class:* ${filterClass || 'All'} • *Total:* ${rows.length}`,
+      ''
+    ];
+    rows.forEach((tr, idx) => {
+      const cells = Array.from(tr.querySelectorAll('td')).map(td => td.innerText.trim());
+      if (cells.length >= 5) {
+        const [dt, name, cls, dur, st] = cells;
+        lines.push(`${idx + 1}. *${name}* (${cls})`);
+        lines.push(`   📅 ${dt} | ⏱️ ${dur} | *${st}*`);
+      } else if (cells.length > 0) {
+        lines.push(`${idx + 1}. ${cells.join(' | ')}`);
+      }
+    });
+    const text = lines.join('
+');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopiedWA(true);
+        setTimeout(() => setCopiedWA(false), 2000);
+      });
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      setCopiedWA(true);
+      setTimeout(() => setCopiedWA(false), 2000);
+    }
+  }
+
   function handleExportCSV() {
     const headers = ['Adm No', 'Student Name', 'Class', 'Type', 'Reason', 'Start Date', 'Start Time', 'Exp Return', 'Actual Return', 'Duration', 'Status', 'Issued By', 'Returned By'];
     const rows = filteredReports.map(l => [
@@ -1073,7 +1115,7 @@ export default function LeaveModule({ user, onBack }) {
 
           <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
             <button onClick={() => exportReportPDF('leave-report-print', `Leave_Report_${filterClass}`)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>PDF</button>
-            <button onClick={() => exportReportJPEG('leave-report-print', `Leave_Report_${filterClass}`)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>JPEG</button>
+            <button onClick={handleCopyWhatsAppReport} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#0f766e', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{copiedWA ? '✅ Copied!' : '📋 Copy WhatsApp'}</button>
             <button onClick={handleExportCSV} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Excel / CSV</button>
           </div>
 

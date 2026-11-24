@@ -83,7 +83,7 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
           onClick={() => setExpanded(v => !v)}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#38a116', color: '#fff', border: 'none', fontSize: 11.5, fontWeight: 800, padding: '6px 12px', borderRadius: 99, letterSpacing: 0.3, cursor: 'pointer' }}
         >
-          📍 CURRENT {weekLabel.toUpperCase()} {!loading && topics.length > 0 ? `(${topics.length})` : ''} {expanded ? '▴' : '▾'}
+          📍 CURRENT {weekLabel.toUpperCase()} {expanded ? '▴' : '▾'}
         </button>
         <button
           type="button"
