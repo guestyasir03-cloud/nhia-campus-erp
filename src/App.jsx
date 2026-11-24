@@ -471,7 +471,7 @@ export default function App() {
 
       <main style={{ padding: '4px 18px 20px' }}>
         <Suspense fallback={<LazyFallback />}>
-        {activeModule === 'students' ? (
+          {activeModule === 'students' ? (
           <StudentsModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'examinations' ? (
           <ExamsModule onBack={() => setActiveModule(null)} user={user} />
@@ -574,7 +574,7 @@ export default function App() {
                           background: mod.is_active ? '#2e44d2' : '#cbd5e1', transition: '0.2s',
                           opacity: mod.id === 'settings' ? 0.5 : 1
                         }
-      </Suspense>}
+                        }
                       >
                         <span style={{
                           position: 'absolute', top: 3, left: mod.is_active ? 23 : 3,
@@ -725,6 +725,7 @@ export default function App() {
             </div>
           </>
         )}
+        </Suspense>
       </main>
 
       {/* BOTTOM NAVIGATION */}
