@@ -463,19 +463,16 @@ export default function FeedbackModule({ onBack, user }) {
           <button onClick={() => setTab('reports')} style={{ flex: 1, padding: 9, borderRadius: 9, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: tab === 'reports' ? '#2e44d2' : 'transparent', color: tab === 'reports' ? '#fff' : '#475569' }}>
             {isAdmin ? 'Reports & Excel' : 'My Feedback'}
           </button>
-        )}
         {isAdmin && (
           <button onClick={() => setTab('setup')} style={{ flex: 1, padding: 9, borderRadius: 9, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: tab === 'setup' ? '#2e44d2' : 'transparent', color: tab === 'setup' ? '#fff' : '#475569' }}>
             Setup ({config.length})
           </button>
-        )}
       </div>
 
       {msg && (
         <div style={{ padding: '10px 12px', borderRadius: 10, background: '#eef2ff', color: '#1e3a8a', fontSize: 12, fontWeight: 700, marginBottom: 12 }}>
           {msg}
         </div>
-      )}
 
       {/* TAB 1: ATTRACTIVE STUDENT SUBMIT FLOW */}
       {tab === 'submit' && (
@@ -484,7 +481,6 @@ export default function FeedbackModule({ onBack, user }) {
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: 14, borderRadius: 14, fontSize: 13, fontWeight: 700, textAlign: 'center' }}>
               Feedback portal is currently closed by Admin.
             </div>
-          )}
 
           {/* Top Identity & Class Card */}
           <div style={{ background: 'linear-gradient(135deg, #2e44d2 0%, #4338ca 100%)', padding: 16, borderRadius: 16, color: '#fff', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -504,7 +500,6 @@ export default function FeedbackModule({ onBack, user }) {
                   <option value="">-- Select Class --</option>
                   {classes.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-              )}
             </div>
 
             {settings.accessCode && !codeVerified && (
@@ -512,7 +507,6 @@ export default function FeedbackModule({ onBack, user }) {
                 <input type="password" value={enteredCode} onChange={e => setEnteredCode(e.target.value)} placeholder="Enter Access Code" style={{ flex: 1, padding: 10, borderRadius: 10, border: 'none', fontSize: 13 }} />
                 <button type="button" onClick={() => enteredCode.trim() === settings.accessCode ? setCodeVerified(true) : setMsg('Wrong access code')} style={{ padding: '0 14px', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Verify</button>
               </div>
-            )}
 
             <div style={{ display: 'flex', gap: 14, fontSize: 12.5 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -525,7 +519,6 @@ export default function FeedbackModule({ onBack, user }) {
 
             {revealName && (
               <input type="text" value={studentName} onChange={e => setStudentName(e.target.value)} maxLength={60} placeholder="Enter your name" style={{ padding: 10, borderRadius: 10, border: 'none', fontSize: 13, color: '#0f172a' }} />
-            )}
           </div>
 
           {/* Progress Bar */}
@@ -539,13 +532,11 @@ export default function FeedbackModule({ onBack, user }) {
                 <div style={{ width: `${Math.round((completedCount / classSubjects.length) * 100)}%`, height: '100%', background: '#16a34a', transition: 'width 0.25s ease' }} />
               </div>
             </div>
-          )}
 
           {selClass && codeVerified && classSubjects.length === 0 && (
             <div style={{ background: '#fff', padding: 18, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center', fontSize: 13, color: '#64748b' }}>
               No subjects configured for <b>{selClass}</b> yet. Ask Admin to add subjects in <b>Feedback → Setup</b>.
             </div>
-          )}
 
           {/* Subject Cards */}
           {selClass && codeVerified && settings.isOpen && classSubjects.map((item, idx) => {
@@ -626,9 +617,7 @@ export default function FeedbackModule({ onBack, user }) {
             <button type="submit" disabled={submitting} style={{ padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
               {submitting ? 'Submitting...' : `Submit Feedback (${completedCount}/${classSubjects.length} Ready)`}
             </button>
-          )}
         </form>
-      )}
 
       {/* TAB 2: ADVANCED REPORTS & EXCEL */}
       {tab === 'reports' && (isAdmin || isTeacher) && (
@@ -668,7 +657,6 @@ export default function FeedbackModule({ onBack, user }) {
                 ))}
               </div>
             </div>
-          )}
 
           {/* Star Rating Distribution */}
           {analytics.ratedCount > 0 && (
@@ -687,7 +675,6 @@ export default function FeedbackModule({ onBack, user }) {
                 );
               })}
             </div>
-          )}
 
           {/* Filters & Exports */}
           {isAdmin && (
@@ -741,7 +728,6 @@ export default function FeedbackModule({ onBack, user }) {
                 </button>
               </div>
             </div>
-          )}
 
           {/* Teacher Leaderboard */}
           <div style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0' }}>
@@ -764,7 +750,6 @@ export default function FeedbackModule({ onBack, user }) {
                   </div>
                 ))}
               </div>
-            )}
           </div>
 
           {/* Individual Comments */}
@@ -787,7 +772,6 @@ export default function FeedbackModule({ onBack, user }) {
                 {showAllSubmissions ? 'Hide List' : `Show (${visibleResponses.length})`}
               </button>
             </div>
-            {showAllSubmissions && (
               <>
             {visibleResponses.map(r => (
               <div key={r.id} style={{ background: '#fff', padding: 12, borderRadius: 12, border: '1px solid #e2e8f0' }}>
@@ -801,7 +785,6 @@ export default function FeedbackModule({ onBack, user }) {
                       <button onClick={() => handleDeleteResponse(r.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}>
                         <Trash2 size={13} />
                       </button>
-                    )}
                   </div>
                 </div>
                 {r.liked && <div style={{ fontSize: 12, color: '#166534', marginBottom: 3 }}><b>Liked:</b> {r.liked}</div>}
@@ -812,5 +795,3 @@ export default function FeedbackModule({ onBack, user }) {
                 </div>
               </div>
             ))}
-              </>
-            )}
