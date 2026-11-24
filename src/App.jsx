@@ -470,6 +470,7 @@ export default function App() {
       </header>
 
       <main style={{ padding: '4px 18px 20px' }}>
+        <Suspense fallback={<LazyFallback />}>
         {activeModule === 'students' ? (
           <StudentsModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'examinations' ? (
@@ -572,7 +573,8 @@ export default function App() {
                           width: 44, height: 24, borderRadius: 20, border: 'none', cursor: 'pointer', position: 'relative',
                           background: mod.is_active ? '#2e44d2' : '#cbd5e1', transition: '0.2s',
                           opacity: mod.id === 'settings' ? 0.5 : 1
-                        }}
+                        }
+      </Suspense>}
                       >
                         <span style={{
                           position: 'absolute', top: 3, left: mod.is_active ? 23 : 3,
@@ -739,7 +741,6 @@ export default function App() {
           const Icon = t.icon;
           const active = activeTab === t.id && !activeModule;
           return (
-    <Suspense fallback={<LazyFallback />}>
       <button
               key={t.id}
               onClick={() => { setActiveTab(t.id); setActiveModule(null); }}
@@ -752,6 +753,5 @@ export default function App() {
         })}
       </nav>
     </div>
-    </Suspense>
   );
 }
