@@ -1235,7 +1235,17 @@ export default function LeaveModule({ user, onBack }) {
                           {isLeaveOverdue(r) ? 'Overdue' : r.status}
                         </td>
                         {isAdmin && (
-                          <td style={{ padding: 7, textAlign: 'center' }}>
+                          <td style={{ padding: 7, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                            {r.status === 'Returned' && (
+                              <button
+                                type="button"
+                                onClick={() => handleReopenLeave([r.id], r.student_name || 'Student')}
+                                title="Undo Return (Mark Active)"
+                                style={{ padding: '4px 6px', borderRadius: 6, border: '1px solid #fde68a', background: '#fef3c7', color: '#b45309', cursor: 'pointer', marginRight: 4, fontSize: 11, fontWeight: 800 }}
+                              >
+                                ↩️
+                              </button>
+                            )}
                             <button
                               onClick={() => handleDeleteLeave(r)}
                               title="Delete Record"
