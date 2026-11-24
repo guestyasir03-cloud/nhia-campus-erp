@@ -1,5 +1,5 @@
 import html2pdf from 'html2pdf.js';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { exportReportPDF, exportReportJPEG, exportReportCSV } from '../lib/exportReport';
 import {
@@ -57,6 +57,39 @@ export default function LeaveModule({ user, onBack }) {
 
   const [tab, setTab] = useState('active'); // 'active' | 'add' | 'reports' | 'insights'
   const [leaves, setLeaves] = useState([]);
+
+  const [undoToast, setUndoToast] = useState(null);
+  const undoTimerRef = useRef(null);
+
+  function triggerUndoToast(ids, label) {
+    if (undoTimerRef.current) clearInterval(undoTimerRef.current);
+    setUndoToast({ ids, label, sec: 5 });
+    undoTimerRef.current = setInterval(() => {
+      setUndoToast(prev => {
+        if (!prev || prev.sec <= 1) {
+          clearInterval(undoTimerRef.current);
+          return null;
+        }
+        return { ...prev, sec: prev.sec - 1 };
+      });
+    }, 1000);
+  }
+
+  async function handleReopenLeave(ids, label) {
+    if (!ids || ids.length === 0) return;
+    if (undoTimerRef.current) clearInterval(undoTimerRef.current);
+    setUndoToast(null);
+    const { error } = await supabase
+      .from('student_leaves')
+      .update({ status: 'Active', return_date: null, return_time: null, returned_by: null })
+      .in('id', ids);
+    if (!error) {
+      setLeaves(prev => prev.map(l => ids.includes(l.id) ? { ...l, status: 'Active', return_date: null, return_time: null, returned_by: null } : l));
+    } else {
+      alert('Undo failed: ' + error.message);
+    }
+  }
+
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
@@ -529,6 +562,7 @@ export default function LeaveModule({ user, onBack }) {
     const rTime = getNowTimeStr();
     // Optimistic update (Zero-Lag)
     setLeaves(prev => prev.map(l => l.id === item.id ? { ...l, status: 'Returned', return_date: rDate, return_time: rTime, returned_by: user?.name || 'Staff' } : l));
+      triggerUndoToast([item.id], 'Student marked Returned');
     const { error } = await supabase
       .from('student_leaves')
       .update({ status: 'Returned', return_date: rDate, return_time: rTime, returned_by: user?.name || 'Staff' })
@@ -553,6 +587,7 @@ export default function LeaveModule({ user, onBack }) {
       alert('Error updating: ' + error.message);
     } else {
       setLeaves(prev => prev.map(l => l.id === returnTarget.id ? { ...l, status: 'Returned', return_date: returnDate, return_time: returnTime, returned_by: user?.name || 'Staff' } : l));
+      triggerUndoToast([returnTarget.id], 'Student marked Returned');
       setMsg(`✅ ${returnTarget.student_name} marked as Returned!`);
       setReturnTarget(null);
     }
@@ -571,6 +606,7 @@ export default function LeaveModule({ user, onBack }) {
       .in('id', ids);
     if (!error) {
       setLeaves(prev => prev.map(l => ids.includes(l.id) ? { ...l, status: 'Returned', return_date: rDate, return_time: rTime, returned_by: user?.name || 'Staff' } : l));
+      triggerUndoToast(ids, `${ids.length} students marked Returned`);
       setSelectedClassView(null);
       setMsg(`✅ All ${targets.length} students in ${className} marked as Returned!`);
     }
@@ -1480,6 +1516,28 @@ export default function LeaveModule({ user, onBack }) {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {undoToast && (
+        <div style={{
+          position: 'fixed', bottom: 76, left: '50%', transform: 'translateX(-50%)',
+          zIndex: 999, background: '#0f172a', color: '#fff', padding: '10px 14px',
+          borderRadius: 12, boxShadow: '0 8px 24px rgba(15,23,42,0.28)',
+          display: 'flex', alignItems: 'center', gap: 12, fontSize: 12.5, fontWeight: 600,
+          maxWidth: '92vw', whiteSpace: 'nowrap'
+        }}>
+          <span>✅ {undoToast.label}</span>
+          <button
+            type="button"
+            onClick={() => handleReopenLeave(undoToast.ids, undoToast.label)}
+            style={{
+              background: '#f59e0b', color: '#0f172a', border: 'none', borderRadius: 8,
+              padding: '5px 10px', fontSize: 12, fontWeight: 800, cursor: 'pointer'
+            }}
+          >
+            ↩️ Undo ({undoToast.sec}s)
+          </button>
         </div>
       )}
     </div>
