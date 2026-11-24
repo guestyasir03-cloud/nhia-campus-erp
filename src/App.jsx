@@ -57,7 +57,15 @@ const SUB_MENUS = {
 };
 
 function LazyFallback() {
-  return <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: "#475569", fontWeight: 600 }}>Loading...</div>;
+  return (
+    <div style={{ padding: 16, maxWidth: 740, margin: '0 auto' }}>
+      <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 14, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ height: 14, width: '42%', borderRadius: 6, background: '#e2e8f0' }} />
+        <div style={{ height: 38, width: '100%', borderRadius: 10, background: '#f1f5f9' }} />
+        <div style={{ height: 38, width: '100%', borderRadius: 10, background: '#f1f5f9' }} />
+      </div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -118,6 +126,24 @@ export default function App() {
   const [loginPass, setLoginPass] = useState('');
   const [loginErr, setLoginErr] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (window.__nhiaPreloaded) return;
+    window.__nhiaPreloaded = true;
+    const warm = () => {
+      import('./modules/FeedbackModule').catch(() => {});
+      import('./modules/LeaveModule').catch(() => {});
+      import('./modules/SyllabusModule').catch(() => {});
+      import('./modules/ExamsModule').catch(() => {});
+      import('./modules/AttendanceModule').catch(() => {});
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(warm, { timeout: 1500 });
+    } else {
+      setTimeout(warm, 400);
+    }
+  }, []);
+
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
