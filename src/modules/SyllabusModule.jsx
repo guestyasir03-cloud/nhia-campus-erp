@@ -303,6 +303,47 @@ export default function SyllabusModule({ onBack, user }) {
     setMsg(`Added ${data.week_label} topic for ${data.class_name} - ${data.subject}`);
   }
 
+  function handleDownloadTemplate() {
+    const sample = [
+      {
+        Subject: 'Malayalam (മലയാളം)',
+        Code: 'S121',
+        Textbook: 'മലയാളം, കേരള പാഠാവലി',
+        'Periods/week': '3',
+        Weeks: 'Weeks 1-2',
+        Topic: 'Chapter 1: Sample Topic'
+      },
+      {
+        Subject: 'Mathematics',
+        Code: 'S133',
+        Textbook: 'Mathematics Text',
+        'Periods/week': '6',
+        Weeks: 'Weeks 3-4',
+        Topic: 'Practical Geometry'
+      }
+    ];
+    const ws = XLSX.utils.json_to_sheet(sample);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Syllabus_Template');
+    XLSX.writeFile(wb, 'Syllabus_Upload_Template.xlsx');
+  }
+
+  async function handleBulkDelete(targetClass) {
+    const isAll = !targetClass || targetClass === 'ALL';
+    const label = isAll ? 'ALL CLASSES (Full Syllabus)' : `Class ${targetClass}`;
+    if (!window.confirm(`⚠️ Are you sure you want to DELETE all syllabus topics for ${label}? This cannot be undone.`)) return;
+
+    let q = supabase.from('syllabus_weeks').delete();
+    if (isAll) q = q.neq('id', 0);
+    else q = q.eq('class_name', targetClass);
+
+    const { error } = await q;
+    if (error) return setMsg('Delete error: ' + error.message);
+
+    setItems(prev => isAll ? [] : prev.filter(x => x.class_name !== targetClass));
+    setMsg(`Deleted all syllabus topics for ${label}.`);
+  }
+
   async function handleDeleteTopic(id) {
     if (!window.confirm('Delete this syllabus topic?')) return;
     setItems(prev => prev.filter(x => x.id !== id));
@@ -352,7 +393,7 @@ export default function SyllabusModule({ onBack, user }) {
             {item.code && <span style={{ fontSize: 10, fontWeight: 700, background: '#f1f5f9', color: '#475569', padding: '2px 6px', borderRadius: 6 }}>{item.code}</span>}
             {item.week_label && <span style={{ fontSize: 10, fontWeight: 700, background: '#fef3c7', color: '#b45309', padding: '2px 6px', borderRadius: 6 }}>{item.week_label}</span>}
           </div>
-          {(isAdmin || isTeacher) && (
+          {isAdmin && (
             <button onClick={() => handleDeleteTopic(item.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}>
               <Trash2 size={13} />
             </button>
@@ -425,7 +466,12 @@ export default function SyllabusModule({ onBack, user }) {
       {/* Direct Excel Bulk Upload Box */}
       {showExcelBox && isAdmin && (
         <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1.5px solid #86efac', marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 800, color: '#166534' }}>Bulk Upload Syllabus Excel (.xlsx)</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#166534' }}>Bulk Upload Syllabus Excel (.xlsx)</div>
+            <button type="button" onClick={handleDownloadTemplate} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #86efac', background: '#f0fdf4', color: '#166534', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
+              📥 Download Template (.xlsx)
+            </button>
+          </div>
           <div style={{ fontSize: 11.5, color: '#475569' }}>Supports columns: <b>Subject, Code, Textbook, Periods/week, Weeks, Topic</b></div>
           <select value={uploadClass} onChange={e => setUploadClass(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12.5, background: '#fff' }}>
             <option value="">-- Select Class --</option>
@@ -467,11 +513,22 @@ export default function SyllabusModule({ onBack, user }) {
             </label>
           )}
           {isAdmin && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: '#475569' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', flexWrap: 'wrap', gap: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, fontWeight: 700, color: '#475569' }}>
               <span>Set Current Week:</span>
               <select value={currentWeek} onChange={e => updateCurrentWeek(e.target.value)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff', fontWeight: 700 }}>
                 {Array.from({ length: 40 }, (_, i) => i + 1).map(w => <option key={w} value={w}>Week {w}</option>)}
               </select>
+              </div>
+              {items.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handleBulkDelete(filterClass)}
+                  style={{ padding: '5px 10px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <Trash2 size={12} /> {filterClass === 'ALL' ? 'Delete All Syllabus' : `Delete ${filterClass} Syllabus`}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -577,7 +634,7 @@ export default function SyllabusModule({ onBack, user }) {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <a href={l.url} target="_blank" rel="noreferrer" style={{ padding: '6px 10px', borderRadius: 8, background: '#eef2ff', color: '#2e44d2', fontSize: 11.5, fontWeight: 700, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}><ExternalLink size={12} /> Open</a>
-                {(isAdmin || isTeacher) && <button onClick={() => handleDeleteLink(l.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}><Trash2 size={14} /></button>}
+                {isAdmin && <button onClick={() => handleDeleteLink(l.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}><Trash2 size={14} /></button>}
               </div>
             </div>
           ))}
