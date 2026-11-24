@@ -562,20 +562,7 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
     <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 14, padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Clean 3-Tab Switcher */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4, background: '#e2e8f0', padding: 3, borderRadius: 10 }}>
-        <button
-          type="button"
-          onClick={() => { setMode('subjects'); onModeChange && onModeChange('subjects'); onModeChange && onModeChange('subjects'); setStatus(''); }}
-          style={{ padding: '7px 6px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, background: mode === 'subjects' ? '#fff' : 'transparent', color: mode === 'subjects' ? '#1e3a8a' : '#475569', boxShadow: mode === 'subjects' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}
-        >
-          <Layers size={13} /> Subjects
-        </button>
-        <button
-          type="button"
-          onClick={() => { setMode('subjects'); onModeChange && onModeChange('subjects'); onModeChange && onModeChange('syllabus'); setStatus(''); }}
-          style={{ padding: '7px 6px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, background: mode === 'syllabus' ? '#fff' : 'transparent', color: mode === 'syllabus' ? '#1e3a8a' : '#475569', boxShadow: mode === 'syllabus' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}
-        >
-          <BookOpen size={13} /> Syllabus
-        </button>
+        
         <button
           type="button"
           onClick={() => { setMode('report'); onModeChange && onModeChange('report'); onModeChange && onModeChange('report'); setStatus(''); }}
