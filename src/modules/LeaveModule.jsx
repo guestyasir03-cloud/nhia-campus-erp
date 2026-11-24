@@ -179,7 +179,7 @@ export default function LeaveModule({ user, onBack }) {
   const [filterStatus, setFilterStatus] = useState('All');
   const [reportSearch, setReportSearch] = useState('');
   const [reportSort, setReportSort] = useState('date_desc'); // 'date_desc' | 'class_asc' | 'name_asc' | 'duration_desc'
-  const [reportView, setReportView] = useState('folders'); // 'folders' | 'table'
+  const [reportView, setReportView] = useState('table'); // 'folders' | 'table'
   const [openReportDates, setOpenReportDates] = useState({});
   const [insightSearch, setInsightSearch] = useState('');
   const [expandedLeaveClass, setExpandedLeaveClass] = useState(null);
@@ -1088,31 +1088,7 @@ export default function LeaveModule({ user, onBack }) {
             </select>
           </div>
 
-          {/* VIEW TOGGLE: DAY FOLDERS VS FULL TABLE */}
-          <div style={{ display: 'flex', gap: 6, background: '#f1f5f9', padding: 4, borderRadius: 9, marginBottom: 10 }}>
-            <button
-              onClick={() => setReportView('folders')}
-              style={{
-                flex: 1, padding: '7px', borderRadius: 7, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                background: reportView === 'folders' ? '#1e293b' : 'transparent',
-                color: reportView === 'folders' ? '#fff' : '#475569'
-              }}
-            >
-              📁 Day Folders ({groupedReportsByDate.length})
-            </button>
-            <button
-              onClick={() => setReportView('table')}
-              style={{
-                flex: 1, padding: '7px', borderRadius: 7, border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer',
-                background: reportView === 'table' ? '#1e293b' : 'transparent',
-                color: reportView === 'table' ? '#fff' : '#475569'
-              }}
-            >
-              📋 Full Table ({filteredReports.length})
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
             <button onClick={() => exportReportPDF('leave-report-print', `Leave_Report_${filterClass}`)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>PDF</button>
             <button onClick={handleCopyWhatsAppReport} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#0f766e', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>{copiedWA ? '✅ Copied!' : '📋 Copy WhatsApp'}</button>
             <button onClick={handleExportCSV} style={{ flex: 1, padding: '8px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Excel / CSV</button>
