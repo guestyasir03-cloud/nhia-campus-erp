@@ -1,25 +1,12 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
-import { Upload, Download, RefreshCw, BookOpen, Layers, Users, FileText, Copy } from 'lucide-react';
+import { Upload, Download, RefreshCw, Layers, Users, FileText, Copy } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
 function parseBool(v) {
   const s = String(v || '').trim().toLowerCase();
   return ['yes', 'true', '1', 'y', 'on'].includes(s);
-}
-
-function parseWeekRange(raw) {
-  const str = String(raw || '').trim();
-  const nums = str.match(/\d+/g);
-  if (!nums || nums.length === 0) return { week_no: 1, week_end: 1, week_label: str || 'Week 1' };
-  const start = parseInt(nums[0], 10) || 1;
-  const end = nums.length > 1 ? (parseInt(nums[1], 10) || start) : start;
-  return {
-    week_no: Math.min(start, end),
-    week_end: Math.max(start, end),
-    week_label: str || (start === end ? `Week ${start}` : `Weeks ${start}-${end}`)
-  };
 }
 
 export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
@@ -33,12 +20,6 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
   const [replaceExisting, setReplaceExisting] = useState(false);
   const [parsedRows, setParsedRows] = useState([]);
 
-  // Syllabus mode state
-  const [sylClass, setSylClass] = useState('');
-  const [replaceSyl, setReplaceSyl] = useState(false);
-  const [autoSyncSub, setAutoSyncSub] = useState(true);
-  const [parsedSylRows, setParsedSylRows] = useState([]);
-
   // Teacher Report mode state
   const [repLoaded, setRepLoaded] = useState(false);
   const [repLoading, setRepLoading] = useState(false);
@@ -49,6 +30,12 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
 
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
+
+  function switchMode(next) {
+    setMode(next);
+    setStatus('');
+    if (onModeChange) onModeChange(next);
+  }
 
   useEffect(() => {
     async function init() {
@@ -257,154 +244,6 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
     if (onDone) onDone();
   }
 
-  // ==================== SYLLABUS EXCEL UPLOAD & EXPORT ====================
-  function handleDownloadSylTemplate() {
-    const sample = [
-      {
-        Subject: 'Quran Recitation (عرض القرآن)',
-        Code: 'S101',
-        Textbook: 'القرآن الكريم (المصحف)',
-        'Periods/week': 'Daily 20 min after Fajr',
-        Weeks: 'Weeks 1-2',
-        Topic: 'من سورة القيامة إلى سورة المدثر',
-        Teacher: ''
-      },
-      {
-        Subject: 'Hadith (الحديث النبوي الشريف)',
-        Code: '104S',
-        Textbook: 'مختار الآداب والأخلاق، متن الأربعين النووية',
-        'Periods/week': '3',
-        Weeks: 'Weeks 1-2',
-        Topic: 'متن الأربعين: من الحديث الأول إلى الثالث',
-        Teacher: ''
-      }
-    ];
-    const ws = XLSX.utils.json_to_sheet(sample);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Syllabus_Template');
-    XLSX.writeFile(wb, 'Syllabus_Upload_Template.xlsx');
-  }
-
-  async function handleDownloadSyllabus() {
-    setBusy(true);
-    setStatus('');
-    let q = supabase.from('syllabus_weeks').select('*').order('class_name').order('subject').order('week_no');
-    if (sylClass) q = q.eq('class_name', sylClass);
-    const { data, error } = await q;
-    setBusy(false);
-    if (error) return setStatus('Download error: ' + error.message);
-    if (!data || data.length === 0) return setStatus(`No syllabus found for ${sylClass || 'any class'}.`);
-
-    const rows = data.map(r => ({
-      Class: r.class_name || '',
-      Subject: r.subject || '',
-      Code: r.code || '',
-      Textbook: r.textbook || '',
-      'Periods/week': r.periods_per_week || '',
-      Weeks: r.week_label || (r.week_no === r.week_end ? `Week ${r.week_no}` : `Weeks ${r.week_no}-${r.week_end}`),
-      Topic: r.topic || '',
-      Teacher: r.teacher_name || ''
-    }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Syllabus');
-    const tag = sylClass ? sylClass.replace(/[^a-zA-Z0-9_-]/g, '_') : 'All_Classes';
-    XLSX.writeFile(wb, `Syllabus_${tag}.xlsx`);
-    setStatus(`Downloaded ${rows.length} syllabus topics (${tag}).`);
-  }
-
-  function handleSylFileChange(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const wb = XLSX.read(ev.target.result, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json = XLSX.utils.sheet_to_json(ws, { defval: '' });
-        const rows = [];
-        json.forEach(r => {
-          const subject = String(r.Subject || r.subject || '').trim();
-          const topic = String(r.Topic || r.topic || '').trim();
-          if (!subject && !topic) return;
-          const wk = parseWeekRange(r.Weeks || r.weeks || r.Week || r.week || 'Week 1');
-          rows.push({
-            class_name: String(r.Class || r.class || r.class_name || '').trim(),
-            subject,
-            code: String(r.Code || r.code || '').trim(),
-            textbook: String(r.Textbook || r.textbook || '').trim(),
-            periods_per_week: String(r['Periods/week'] || r['Periods/Week'] || r.Periods || r.periods_per_week || '').trim(),
-            week_no: wk.week_no,
-            week_end: wk.week_end,
-            week_label: wk.week_label,
-            topic,
-            teacher_name: String(r.Teacher || r.teacher || r.teacher_name || r.Staff || '').trim(),
-            is_completed: false
-          });
-        });
-        setParsedSylRows(rows);
-        setStatus(`Ready to upload ${rows.length} syllabus topics.`);
-      } catch (err) {
-        setStatus('Excel read error: ' + err.message);
-      }
-    };
-    reader.readAsArrayBuffer(file);
-  }
-
-  async function handleBulkUploadSyllabus() {
-    if (parsedSylRows.length === 0) return setStatus('Please select a Syllabus Excel file first.');
-    const resolved = parsedSylRows.map(r => {
-      const cls = sylClass || r.class_name;
-      const stf = findStaff(r.teacher_name);
-      return {
-        ...r,
-        class_name: cls,
-        teacher_name: stf ? stf.name : (r.teacher_name || '')
-      };
-    }).filter(r => r.class_name && r.subject);
-
-    if (resolved.length === 0) return setStatus('Please select a Class for this Syllabus (or include Class column in Excel).');
-
-    setBusy(true);
-    const uniqueClasses = [...new Set(resolved.map(r => r.class_name))];
-    if (replaceSyl) {
-      for (const c of uniqueClasses) {
-        await supabase.from('syllabus_weeks').delete().eq('class_name', c);
-      }
-    }
-
-    const { error } = await supabase.from('syllabus_weeks').insert(resolved);
-    if (error) { setBusy(false); return setStatus('Syllabus upload error: ' + error.message); }
-
-    if (autoSyncSub) {
-      const subMap = new Map();
-      resolved.forEach(r => {
-        const key = `${r.class_name.toLowerCase()}|${r.subject.toLowerCase()}`;
-        if (!subMap.has(key)) {
-          const stf = findStaff(r.teacher_name);
-          subMap.set(key, {
-            class_name: r.class_name,
-            subject_name: r.subject,
-            staff_id: stf ? String(stf.staff_id) : null,
-            staff_name: stf ? stf.name : (r.teacher_name || null),
-            has_w1_w4: false,
-            has_midterm: false,
-            has_hifz: false
-          });
-        }
-      });
-      await supabase
-        .from('subject_assignments')
-        .upsert(Array.from(subMap.values()), { onConflict: 'class_name,subject_name', ignoreDuplicates: true });
-    }
-
-    setBusy(false);
-    setParsedSylRows([]);
-    setRepLoaded(false);
-    setStatus(`Uploaded ${resolved.length} syllabus topics${autoSyncSub ? ' & synced subjects!' : '!'}`);
-    if (onDone) onDone();
-  }
-
   // ==================== TEACHER-WISE CLASS & SUBJECT REPORT ====================
   const reportData = useMemo(() => {
     const teacherMap = new Map();
@@ -423,7 +262,7 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
         teacherMap.set(tName, {
           teacher: tName,
           totalSubjects: 0,
-          classMap: {} // { S1: ['Fiqh', 'Arabic'], D2: ['Adab'] }
+          classMap: {}
         });
       }
       const entry = teacherMap.get(tName);
@@ -493,7 +332,7 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
         <thead>
           <tr style="background:#1e3a8a; color:#fff;">
             <th style="padding:6px; border:1px solid #cbd5e1; text-align:left; width:30px;">#</th>
-            <th style="padding:6px; border:1px solid #cbd5e1; text-align:left; width:150px;">Teacher</th>
+            <th style="padding:6px; border:1px solid #cbd5e1; text-align:left; width:155px;">Teacher</th>
             <th style="padding:6px; border:1px solid #cbd5e1; text-align:left;">Classes & Subjects</th>
           </tr>
         </thead>
@@ -559,44 +398,81 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
   }
 
   return (
-    <div style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: 14, padding: 12, marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {/* Clean 3-Tab Switcher */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 4, background: '#e2e8f0', padding: 3, borderRadius: 10 }}>
-        
+    <div style={{ background: 'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)', border: '1px solid #cbd5e1', borderRadius: 16, padding: 14, marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 12, boxShadow: '0 2px 8px rgba(15,23,42,0.04)' }}>
+      {/* Clean 2-Tab Switcher (Always Side-by-Side) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, background: '#e2e8f0', padding: 4, borderRadius: 12 }}>
         <button
           type="button"
-          onClick={() => { setMode('report'); onModeChange && onModeChange('report'); onModeChange && onModeChange('report'); setStatus(''); }}
-          style={{ padding: '7px 6px', borderRadius: 8, border: 'none', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, background: mode === 'report' ? '#fff' : 'transparent', color: mode === 'report' ? '#1e3a8a' : '#475569', boxShadow: mode === 'report' ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}
+          onClick={() => switchMode('subjects')}
+          style={{
+            padding: '9px 10px',
+            borderRadius: 9,
+            border: 'none',
+            fontSize: 12,
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            background: mode === 'subjects' ? '#ffffff' : 'transparent',
+            color: mode === 'subjects' ? '#1e3a8a' : '#475569',
+            boxShadow: mode === 'subjects' ? '0 2px 6px rgba(30,58,138,0.12)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
         >
-          <Users size={13} /> Staff Report
+          <Layers size={14} /> Subjects & Excel
+        </button>
+        <button
+          type="button"
+          onClick={() => switchMode('report')}
+          style={{
+            padding: '9px 10px',
+            borderRadius: 9,
+            border: 'none',
+            fontSize: 12,
+            fontWeight: 800,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+            background: mode === 'report' ? '#ffffff' : 'transparent',
+            color: mode === 'report' ? '#1e3a8a' : '#475569',
+            boxShadow: mode === 'report' ? '0 2px 6px rgba(30,58,138,0.12)' : 'none',
+            transition: 'all 0.15s ease'
+          }}
+        >
+          <Users size={14} /> Staff Report
         </button>
       </div>
 
       {mode === 'subjects' && (
-        <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>Subjects Excel (Sync / Download / Upload)</div>
-            <button type="button" onClick={handleDownloadSubTemplate} style={{ padding: '5px 9px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>Sync & Export Subjects</div>
+            <button type="button" onClick={handleDownloadSubTemplate} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#1e293b', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
               📥 Template (.xlsx)
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, minWidth: 110, padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <select value={selectedClass} onChange={e => setSelectedClass(e.target.value)} style={{ flex: 1, minWidth: 120, padding: '8px 10px', borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600, background: '#fff', color: '#0f172a' }}>
               <option value="ALL">All Classes</option>
               {classes.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
-            <button type="button" onClick={handleSyncFromSyllabus} disabled={busy} style={{ padding: '8px 11px', borderRadius: 8, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <button type="button" onClick={handleSyncFromSyllabus} disabled={busy} style={{ padding: '8px 12px', borderRadius: 9, border: 'none', background: '#7c3aed', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <RefreshCw size={13} /> Sync from Syllabus
             </button>
-            <button type="button" onClick={handleDownloadSubjects} disabled={busy} style={{ padding: '8px 11px', borderRadius: 8, border: 'none', background: '#2e44d2', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <button type="button" onClick={handleDownloadSubjects} disabled={busy} style={{ padding: '8px 12px', borderRadius: 9, border: 'none', background: '#1e3a8a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <Download size={13} /> Excel (.xlsx)
             </button>
           </div>
 
           <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-              <select value={targetClass} onChange={e => setTargetClass(e.target.value)} style={{ flex: 1, minWidth: 140, padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+            <div style={{ fontSize: 12, fontWeight: 800, color: '#0f172a' }}>Bulk Upload Subjects (.xlsx)</div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <select value={targetClass} onChange={e => setTargetClass(e.target.value)} style={{ flex: 1, minWidth: 150, padding: '8px 10px', borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600, background: '#fff', color: '#0f172a' }}>
                 <option value="">Use Class from Excel (or pick Class)</option>
                 {classes.map(c => <option key={c} value={c}>Upload to: {c}</option>)}
               </select>
@@ -604,76 +480,75 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <label style={{ fontSize: 11.5, color: '#334155', display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer' }}>
+              <label style={{ fontSize: 11.5, color: '#334155', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                 <input type="checkbox" checked={replaceExisting} onChange={e => setReplaceExisting(e.target.checked)} />
                 Replace existing subjects for uploaded class
               </label>
               {parsedRows.length > 0 && (
-                <button type="button" onClick={handleBulkUploadSubjects} disabled={busy} style={{ padding: '7px 12px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <button type="button" onClick={handleBulkUploadSubjects} disabled={busy} style={{ padding: '8px 14px', borderRadius: 9, border: 'none', background: '#16a34a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                   <Upload size={13} /> {busy ? 'Uploading...' : `Upload ${parsedRows.length} Subjects`}
                 </button>
               )}
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {mode === 'report' && (
-        <>
+        <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>Teacher-wise Classes & Subjects ({reportData.list.length} Staff • {reportData.totalSubjects} Subjects)</div>
-            <button type="button" onClick={loadReportData} disabled={repLoading} style={{ padding: '4px 8px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#334155', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>
+              Teacher-wise Classes & Subjects ({reportData.list.length} Staff • {reportData.totalSubjects} Subjects)
+            </div>
+            <button type="button" onClick={loadReportData} disabled={repLoading} style={{ padding: '5px 9px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', color: '#334155', fontSize: 11, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <RefreshCw size={11} /> Refresh
             </button>
           </div>
 
-          {/* Filters */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 6 }}>
-            <select value={repTeacherFilter} onChange={e => setRepTeacherFilter(e.target.value)} style={{ width: '100%', minWidth: 0, padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 8 }}>
+            <select value={repTeacherFilter} onChange={e => setRepTeacherFilter(e.target.value)} style={{ width: '100%', minWidth: 0, padding: '8px 10px', borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600, background: '#fff', color: '#0f172a' }}>
               <option value="ALL">All Teachers</option>
               {reportData.allTeachers.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
-            <select value={repClassFilter} onChange={e => setRepClassFilter(e.target.value)} style={{ width: '100%', minWidth: 0, padding: 8, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+            <select value={repClassFilter} onChange={e => setRepClassFilter(e.target.value)} style={{ width: '100%', minWidth: 0, padding: '8px 10px', borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12, fontWeight: 600, background: '#fff', color: '#0f172a' }}>
               <option value="ALL">All Classes</option>
               {classes.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
 
-          {/* Single Place for Excel / PDF / WhatsApp Exports */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button type="button" onClick={handleExportReportExcel} style={{ flex: 1, minWidth: 95, padding: '8px 10px', borderRadius: 8, border: 'none', background: '#16a34a', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+            <button type="button" onClick={handleExportReportExcel} style={{ flex: 1, minWidth: 95, padding: '8px 10px', borderRadius: 9, border: 'none', background: '#16a34a', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
               <Download size={13} /> Excel (.xlsx)
             </button>
-            <button type="button" onClick={handleExportReportPDF} style={{ flex: 1, minWidth: 95, padding: '8px 10px', borderRadius: 8, border: 'none', background: '#dc2626', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+            <button type="button" onClick={handleExportReportPDF} style={{ flex: 1, minWidth: 95, padding: '8px 10px', borderRadius: 9, border: 'none', background: '#dc2626', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
               <FileText size={13} /> PDF Report
             </button>
-            <button type="button" onClick={handleCopyReportWA} style={{ flex: 1, minWidth: 105, padding: '8px 10px', borderRadius: 8, border: 'none', background: '#0f766e', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+            <button type="button" onClick={handleCopyReportWA} style={{ flex: 1, minWidth: 105, padding: '8px 10px', borderRadius: 9, border: 'none', background: '#0f766e', color: '#fff', fontSize: 11.5, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
               <Copy size={13} /> {copiedWA ? 'Copied!' : 'WhatsApp'}
             </button>
           </div>
 
-          {/* Teacher Cards showing exact Class -> Subjects */}
           {repLoading ? (
-            <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 12 }}>Loading...</div>
+            <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 14 }}>Loading...</div>
           ) : reportData.list.length === 0 ? (
-            <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 12 }}>No assignments found.</div>
+            <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 14 }}>No assignments found.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 380, overflowY: 'auto', paddingRight: 2 }}>
               {reportData.list.map(t => (
-                <div key={t.teacher} style={{ flexShrink: 0, background: '#fff', border: '1px solid #cbd5e1', borderRadius: 10, padding: '9px 11px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6, borderBottom: '1px solid #f1f5f9', paddingBottom: 5 }}>
+                <div key={t.teacher} style={{ flexShrink: 0, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, borderBottom: '1px solid #e2e8f0', paddingBottom: 6 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 800, color: t.teacher === 'Unassigned' ? '#dc2626' : '#0f172a' }}>
                       {t.teacher}
                     </span>
-                    <span style={{ fontSize: 11, fontWeight: 700, background: '#eef2ff', color: '#1e3a8a', padding: '2px 8px', borderRadius: 99, whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 11, fontWeight: 800, background: '#dbeafe', color: '#1e3a8a', padding: '2px 9px', borderRadius: 99, whiteSpace: 'nowrap' }}>
                       {t.totalSubjects} Subjects
                     </span>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {Object.entries(t.classMap).map(([cls, subs]) => (
-                      <div key={cls} style={{ fontSize: 11.5, lineHeight: 1.4, color: '#334155' }}>
-                        <span style={{ display: 'inline-block', fontWeight: 800, color: '#1d4ed8', background: '#eff6ff', padding: '1px 6px', borderRadius: 5, marginRight: 6 }}>{cls}</span>
-                        <span>{subs.join(', ')}</span>
+                      <div key={cls} style={{ fontSize: 11.5, lineHeight: 1.45, color: '#334155' }}>
+                        <span style={{ display: 'inline-block', fontWeight: 800, color: '#1d4ed8', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '1px 7px', borderRadius: 6, marginRight: 6 }}>{cls}</span>
+                        <span style={{ fontWeight: 500 }}>{subs.join(', ')}</span>
                       </div>
                     ))}
                   </div>
@@ -681,10 +556,14 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
               ))}
             </div>
           )}
-        </>
+        </div>
       )}
 
-      {status && <div style={{ fontSize: 11.5, fontWeight: 700, color: '#1e3a8a', background: '#eef2ff', padding: '6px 10px', borderRadius: 8 }}>{status}</div>}
+      {status && (
+        <div style={{ fontSize: 11.5, fontWeight: 700, color: '#1e3a8a', background: '#eff6ff', border: '1px solid #bfdbfe', padding: '7px 11px', borderRadius: 9 }}>
+          {status}
+        </div>
+      )}
     </div>
   );
 }
