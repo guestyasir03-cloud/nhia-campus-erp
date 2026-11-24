@@ -579,6 +579,7 @@ export default function ClassSubjectsExcelBar({ onDone, onModeChange }) {
             <button type="button" onClick={handleDownloadSubjects} disabled={busy} style={{ padding: '8px 12px', borderRadius: 9, border: 'none', background: '#1e3a8a', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <Download size={13} /> Excel (.xlsx)
             </button>
+            <button type="button" onClick={handleDownloadSubjectsJPEG} disabled={busy} style={{ padding: '8px 12px', borderRadius: 9, border: 'none', background: '#0284c7', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>JPEG</button>
           </div>
 
           <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
