@@ -549,13 +549,13 @@ export default function App() {
 
             {/* MODULE MANAGER WITH ROLE CHIPS */}
             <div style={{ fontSize: 13, fontWeight: 700, color: '#475569', marginBottom: 10 }}>Module Manager & Access</div>
+            {user?.role === 'teacher' && <TeacherCurrentWeekCard user={user} onOpenSyllabus={() => setActiveModule('syllabus')} />}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {modules.map(mod => {
                 const Icon = ICON_MAP[mod.icon] || Sliders;
                 const activeRoles = Array.isArray(mod.visible_roles) ? mod.visible_roles : [];
                 return (
-                  {user?.role === 'teacher' && <TeacherCurrentWeekCard user={user} onOpenSyllabus={() => setActiveModule('syllabus')} />}
-            <div key={mod.id} style={{ background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
+<div key={mod.id} style={{ background: '#fff', padding: '14px 16px', borderRadius: 14, border: '1px solid #e2e8f0' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <div style={{ width: 36, height: 36, borderRadius: 10, background: '#eef2ff', color: '#2e44d2', display: 'grid', placeItems: 'center' }}>
