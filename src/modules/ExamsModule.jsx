@@ -674,7 +674,7 @@ const handleEnterDown = (e) => {
                       return (
                         <tr key={s.adm_no} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: 10, textAlign: 'left', fontWeight: 600 }}>
-                            {s.name}<div style={{ fontSize: 10, color: '#64748b' }}>{s.adm_no}</div>
+                            {s.name} <span style={{ fontSize: 10, fontWeight: 800, color: '#1e3a8a', background: '#dbeafe', padding: '1px 6px', borderRadius: 5, marginLeft: 4 }}>Roll #{s.roll_no ?? s.rollNumber ?? (students.indexOf(s) + 1)}</span><div style={{ fontSize: 10, color: '#64748b' }}>{s.adm_no}</div>
                           </td>
                           {isSingleMarkMode ? (
                             <td style={{ padding: 6 }}>
