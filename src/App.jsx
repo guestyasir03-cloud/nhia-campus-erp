@@ -690,7 +690,7 @@ export default function App() {
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Present today</div>
               </div>
             </div>
-            {activeRole === 'teacher' && <TeacherCurrentWeekCard user={{ ...user, role: activeRole }} onOpenSyllabus={() => setActiveModule('syllabus')} />}
+            {user?.role === 'teacher' && <TeacherCurrentWeekCard user={user} onOpenSyllabus={() => setActiveModule('syllabus')} />}
 
 
 
