@@ -307,8 +307,15 @@ export default function FeedbackModule({ onBack, user }) {
         (r.identity || '').toLowerCase().includes(q)
       );
     }
+    
+    if (fbRatingFilter === '5') list = list.filter(r => Number(r.rating) === 5);
+    else if (fbRatingFilter === '4') list = list.filter(r => Number(r.rating) >= 4);
+    else if (fbRatingFilter === 'low') list = list.filter(r => Number(r.rating) > 0 && Number(r.rating) <= 3);
+
+    if (fbSortBy === 'highest') list = [...list].sort((a, b) => (Number(b.rating) || 0) - (Number(a.rating) || 0));
+    else if (fbSortBy === 'lowest') list = [...list].sort((a, b) => (Number(a.rating) || 0) - (Number(b.rating) || 0));
     return list;
-  }, [responses, activeCycleName, isTeacher, isAdmin, user, filterTeacher, filterClass, searchQuery]);
+  }, [responses, activeCycleName, isTeacher, isAdmin, user, filterTeacher, filterClass, searchQuery, fbRatingFilter, fbSortBy]);
 
   // Class-wise unique student participation
   const participationByClass = useMemo(() => {
@@ -463,7 +470,7 @@ export default function FeedbackModule({ onBack, user }) {
           <button onClick={() => setTab('reports')} style={{ flex: 1, padding: 9, borderRadius: 9, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: tab === 'reports' ? '#2e44d2' : 'transparent', color: tab === 'reports' ? '#fff' : '#475569' }}>
             {isAdmin ? 'Reports & Excel' : 'My Feedback'}
           </button>
-          )}
+        )}
         {isAdmin && (
           <button onClick={() => setTab('setup')} style={{ flex: 1, padding: 9, borderRadius: 9, border: 'none', fontWeight: 700, fontSize: 12, cursor: 'pointer', background: tab === 'setup' ? '#2e44d2' : 'transparent', color: tab === 'setup' ? '#fff' : '#475569' }}>
             Setup ({config.length})
@@ -475,7 +482,6 @@ export default function FeedbackModule({ onBack, user }) {
         <div style={{ padding: '10px 12px', borderRadius: 10, background: '#eef2ff', color: '#1e3a8a', fontSize: 12, fontWeight: 700, marginBottom: 12 }}>
           {msg}
         </div>
-
       )}
 
       {/* TAB 1: ATTRACTIVE STUDENT SUBMIT FLOW */}
@@ -485,7 +491,6 @@ export default function FeedbackModule({ onBack, user }) {
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', padding: 14, borderRadius: 14, fontSize: 13, fontWeight: 700, textAlign: 'center' }}>
               Feedback portal is currently closed by Admin.
             </div>
-
           )}
 
           {/* Top Identity & Class Card */}
@@ -506,6 +511,7 @@ export default function FeedbackModule({ onBack, user }) {
                   <option value="">-- Select Class --</option>
                   {classes.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
+              )}
             </div>
 
             {settings.accessCode && !codeVerified && (
@@ -513,6 +519,7 @@ export default function FeedbackModule({ onBack, user }) {
                 <input type="password" value={enteredCode} onChange={e => setEnteredCode(e.target.value)} placeholder="Enter Access Code" style={{ flex: 1, padding: 10, borderRadius: 10, border: 'none', fontSize: 13 }} />
                 <button type="button" onClick={() => enteredCode.trim() === settings.accessCode ? setCodeVerified(true) : setMsg('Wrong access code')} style={{ padding: '0 14px', borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>Verify</button>
               </div>
+            )}
 
             <div style={{ display: 'flex', gap: 14, fontSize: 12.5 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -525,6 +532,7 @@ export default function FeedbackModule({ onBack, user }) {
 
             {revealName && (
               <input type="text" value={studentName} onChange={e => setStudentName(e.target.value)} maxLength={60} placeholder="Enter your name" style={{ padding: 10, borderRadius: 10, border: 'none', fontSize: 13, color: '#0f172a' }} />
+            )}
           </div>
 
           {/* Progress Bar */}
@@ -538,11 +546,13 @@ export default function FeedbackModule({ onBack, user }) {
                 <div style={{ width: `${Math.round((completedCount / classSubjects.length) * 100)}%`, height: '100%', background: '#16a34a', transition: 'width 0.25s ease' }} />
               </div>
             </div>
+          )}
 
           {selClass && codeVerified && classSubjects.length === 0 && (
             <div style={{ background: '#fff', padding: 18, borderRadius: 14, border: '1px solid #e2e8f0', textAlign: 'center', fontSize: 13, color: '#64748b' }}>
               No subjects configured for <b>{selClass}</b> yet. Ask Admin to add subjects in <b>Feedback → Setup</b>.
             </div>
+          )}
 
           {/* Subject Cards */}
           {selClass && codeVerified && settings.isOpen && classSubjects.map((item, idx) => {
@@ -623,7 +633,9 @@ export default function FeedbackModule({ onBack, user }) {
             <button type="submit" disabled={submitting} style={{ padding: 14, borderRadius: 12, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 800, fontSize: 14, cursor: 'pointer' }}>
               {submitting ? 'Submitting...' : `Submit Feedback (${completedCount}/${classSubjects.length} Ready)`}
             </button>
+          )}
         </form>
+      )}
 
       {/* TAB 2: ADVANCED REPORTS & EXCEL */}
       {tab === 'reports' && (isAdmin || isTeacher) && (
@@ -663,6 +675,7 @@ export default function FeedbackModule({ onBack, user }) {
                 ))}
               </div>
             </div>
+          )}
 
           {/* Star Rating Distribution */}
           {analytics.ratedCount > 0 && (
@@ -681,6 +694,7 @@ export default function FeedbackModule({ onBack, user }) {
                 );
               })}
             </div>
+          )}
 
           {/* Filters & Exports */}
           {isAdmin && (
@@ -734,6 +748,7 @@ export default function FeedbackModule({ onBack, user }) {
                 </button>
               </div>
             </div>
+          )}
 
           {/* Teacher Leaderboard */}
           <div style={{ background: '#fff', padding: 12, borderRadius: 14, border: '1px solid #e2e8f0' }}>
@@ -756,29 +771,11 @@ export default function FeedbackModule({ onBack, user }) {
                   </div>
                 ))}
               </div>
+            )}
           </div>
 
           {/* Individual Comments */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8, background: '#f8fafc', padding: 8, borderRadius: 10, border: '1px solid #e2e8f0' }}>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flex: 1 }}>
-                <select value={fbRatingFilter} onChange={e => setFbRatingFilter(e.target.value)} style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff', fontWeight: 600 }}>
-                  <option value="ALL">All Ratings</option>
-                  <option value="5">5 ★ Only</option>
-                  <option value="4">4 ★ & above</option>
-                  <option value="low">3 ★ & below</option>
-                </select>
-                <select value={fbSortBy} onChange={e => setFbSortBy(e.target.value)} style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff', fontWeight: 600 }}>
-                  <option value="newest">Newest First</option>
-                  <option value="highest">Highest Rating</option>
-                  <option value="lowest">Lowest Rating</option>
-                </select>
-              </div>
-              <button type="button" onClick={() => setShowAllSubmissions(v => !v)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#fff', color: '#1e3a8a', fontSize: 11.5, fontWeight: 700, cursor: 'pointer' }}>
-                {showAllSubmissions ? 'Hide List' : `Show (${visibleResponses.length})`}
-              </button>
-            </div>
-              <>
             {visibleResponses.map(r => (
               <div key={r.id} style={{ background: '#fff', padding: 12, borderRadius: 12, border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -791,6 +788,7 @@ export default function FeedbackModule({ onBack, user }) {
                       <button onClick={() => handleDeleteResponse(r.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 2 }}>
                         <Trash2 size={13} />
                       </button>
+                    )}
                   </div>
                 </div>
                 {r.liked && <div style={{ fontSize: 12, color: '#166534', marginBottom: 3 }}><b>Liked:</b> {r.liked}</div>}
@@ -801,3 +799,73 @@ export default function FeedbackModule({ onBack, user }) {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: CLEAN RESPONSIVE ADMIN SETUP */}
+      {tab === 'setup' && isAdmin && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>Feedback Settings</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+              <input value={settings.cycle} onChange={e => setSettings({ ...settings, cycle: e.target.value })} placeholder="Cycle (e.g. Term 1)" style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12.5 }} />
+              <input value={settings.accessCode} onChange={e => setSettings({ ...settings, accessCode: e.target.value })} placeholder="Access Code (Optional)" style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12.5 }} />
+            </div>
+            <label style={{ fontSize: 12.5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={settings.isOpen} onChange={e => setSettings({ ...settings, isOpen: e.target.checked })} />
+              Feedback Portal Open for Students
+            </label>
+            <button onClick={saveSettings} style={{ padding: 10, borderRadius: 9, border: 'none', background: '#2e44d2', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}>
+              Save Settings
+            </button>
+          </div>
+
+          <form onSubmit={handleAddConfig} style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>Assign Subjects & Teachers to Class</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <select value={cfgClass} onChange={e => setCfgClass(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12.5, background: '#fff' }}>
+                <option value="">-- Select Class --</option>
+                {allClasses.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input list="fb-syl-list" value={cfgSubject} onChange={e => setCfgSubject(e.target.value)} placeholder="Select or Type Subject" style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12.5 }} />
+              <datalist id="fb-syl-list">{syllabusSubjects.map(s => <option key={s} value={s} />)}</datalist>
+              <select value={cfgTeacher} onChange={e => setCfgTeacher(e.target.value)} style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 9, border: '1px solid #cbd5e1', fontSize: 12.5, background: '#fff' }}>
+                <option value="">-- Select Teacher --</option>
+                {allStaff.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+            <button type="submit" style={{ padding: 10, borderRadius: 9, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, fontSize: 12.5, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+              <Plus size={15} /> Add Subject Mapping
+            </button>
+
+            {/* Filter & List */}
+            {config.length > 0 && (
+              <div style={{ marginTop: 6, borderTop: '1px solid #f1f5f9', paddingTop: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>Configured Subjects ({filteredConfig.length})</span>
+                  <select value={setupFilterClass} onChange={e => setSetupFilterClass(e.target.value)} style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 11.5, background: '#fff' }}>
+                    <option value="ALL">All Classes</option>
+                    {classes.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {filteredConfig.map(c => (
+                    <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', borderRadius: 8, background: '#f8fafc', border: '1px solid #e2e8f0', fontSize: 12 }}>
+                      <span><b>{c.class_name}</b> • {c.subject} <span style={{ color: '#2e44d2', fontWeight: 600 }}>({c.teacher_name})</span></span>
+                      {c.isCustom ? (
+                        <button type="button" onClick={() => handleDeleteConfig(c.id)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer' }}><Trash2 size={14} /></button>
+                      ) : (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', background: '#dcfce7', padding: '2px 6px', borderRadius: 6 }}>Auto</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
