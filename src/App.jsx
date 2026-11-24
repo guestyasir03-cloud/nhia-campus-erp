@@ -127,23 +127,6 @@ export default function App() {
   const [loginErr, setLoginErr] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    if (window.__nhiaPreloaded) return;
-    window.__nhiaPreloaded = true;
-    const warm = () => {
-      import('./modules/FeedbackModule').catch(() => {});
-      import('./modules/LeaveModule').catch(() => {});
-      import('./modules/SyllabusModule').catch(() => {});
-      import('./modules/ExamsModule').catch(() => {});
-      import('./modules/AttendanceModule').catch(() => {});
-    };
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(warm, { timeout: 1500 });
-    } else {
-      setTimeout(warm, 400);
-    }
-  }, []);
-
 
   useEffect(() => {
     if (!isSupabaseConfigured) return;
