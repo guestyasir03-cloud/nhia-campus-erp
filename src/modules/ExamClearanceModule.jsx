@@ -114,6 +114,7 @@ export default function ExamClearanceModule({ onBack, user }) {
   const isClassTeacher = !isAdmin && !isStudent && (myPerm.assigned_classes || []).length > 0;
   const canManageItems = isAdmin || isClassTeacher;
   const manageableClasses = isAdmin ? allClasses : (myPerm.assigned_classes || []);
+  const myCreatorKey = String(user?.staff_id || user?.id || user?.name || '').trim().toLowerCase();
 
   useEffect(() => {
     if (isClassTeacher) {
@@ -285,7 +286,8 @@ export default function ExamClearanceModule({ onBack, user }) {
       remarks: specialRemarks.trim(),
       cleared_by: null,
       cleared_at: null,
-      is_custom: true
+      is_custom: true,
+      created_by: myCreatorKey
     };
     const { error } = await supabase.from('exam_clearances').upsert(rec, { onConflict: 'adm_no,item_name' });
     if (error) return setMsg('Error: ' + error.message);
@@ -385,7 +387,8 @@ export default function ExamClearanceModule({ onBack, user }) {
       amount_type: itemAmtType,
       fixed_amount: itemAmtType === 'fixed' ? (Number(itemFixedAmt) || 0) : 0,
       class_amounts: itemAmtType === 'class_wise' ? cleanClassAmts : {},
-      sort_order: itemFormId ? undefined : (itemsList.length + 1)
+      sort_order: itemFormId ? undefined : (itemsList.length + 1),
+      ...(itemFormId ? {} : { created_by: myCreatorKey, created_by_name: user?.name || 'Staff' })
     };
 
     let err;
@@ -822,7 +825,7 @@ export default function ExamClearanceModule({ onBack, user }) {
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Active Clearance Items ({itemsList.length})</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 480, overflowY: 'auto' }}>
               {itemsList.filter(it => isAdmin || it.is_common || (it.target_classes || []).some(c => manageableClasses.includes(c))).map(it => {
-                const canEditThis = isAdmin || (!it.is_common && (it.target_classes || []).every(c => manageableClasses.includes(c)));
+                const canEditThis = isAdmin || (Boolean(it.created_by) && String(it.created_by).trim().toLowerCase() === myCreatorKey);
                 return (
                   <div key={it.id} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                     <div>
@@ -958,7 +961,7 @@ export default function ExamClearanceModule({ onBack, user }) {
                                   {it.is_custom && <span style={{ display: 'block', fontSize: 9, color: '#be123c' }}>Special Due</span>}
                                 </span>
                               </label>
-                              {it.is_custom && canManageItems && (
+                              {it.is_custom && (isAdmin || (Boolean(c.created_by) && String(c.created_by).trim().toLowerCase() === myCreatorKey)) && (
                                 <button onClick={() => deleteSpecialDue(s, it.name)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 0, fontSize: 11, fontWeight: 800 }} title="Remove">✕</button>
                               )}
                             </div>
