@@ -5,6 +5,7 @@ import {
   LogOut, Building, Library, Plus, X
 } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './lib/supabase';
+import { flushOfflineQueue, getOfflineQueue } from './lib/offlineCache';
 const StudentsModule = lazy(() => import('./modules/StudentsModule'));
 const ExamsModule = lazy(() => import('./modules/ExamsModule'));
 const AttendanceModule = lazy(() => import('./modules/AttendanceModule'));
@@ -126,6 +127,30 @@ export default function App() {
   const [loginPass, setLoginPass] = useState('');
   const [loginErr, setLoginErr] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [pendingSyncCount, setPendingSyncCount] = useState(() => getOfflineQueue().length);
+
+  useEffect(() => {
+    const syncNow = async () => {
+      setIsOnline(navigator.onLine);
+      setPendingSyncCount(getOfflineQueue().length);
+      if (navigator.onLine && isSupabaseConfigured && supabase) {
+        const res = await flushOfflineQueue(supabase);
+        setPendingSyncCount(res.remaining);
+      }
+    };
+    const onOnline = () => { syncNow(); };
+    const onOffline = () => { setIsOnline(false); };
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    if (navigator.onLine) syncNow();
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
 
 
   useEffect(() => {
