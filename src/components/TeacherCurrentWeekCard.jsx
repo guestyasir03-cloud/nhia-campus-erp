@@ -40,7 +40,7 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
         { data: tchAsg },
         { data: sylRows }
       ] = await Promise.all([
-        supabase.from('subject_assignments').select('class_name, subject_name, staff_name').limit(2000),
+        supabase.from('subject_assignments').select('class_name, subject_name, staff_id, staff_name').limit(2000),
         supabase.from('teacher_assignments').select('class_name, subject_name, staff_name').limit(2000),
         supabase
           .from('syllabus_weeks')
@@ -73,13 +73,15 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
       };
 
       const myPairs = [];
-      const addPair = (c, s, t) => {
-        if (!c || !s || !t) return;
-        if (isSameTeacher(t)) {
+      const myStaffId = String(user?.staff_id || '').trim().toLowerCase();
+      const addPair = (c, s, t, sid) => {
+        if (!c || !s) return;
+        const idMatch = myStaffId && sid && String(sid).trim().toLowerCase() === myStaffId;
+        if (idMatch || isSameTeacher(t)) {
           myPairs.push({ cls: String(c).trim().toLowerCase(), sub: String(s).trim().toLowerCase() });
         }
       };
-      (subAsg || []).forEach(r => addPair(r.class_name, r.subject_name, r.staff_name));
+      (subAsg || []).forEach(r => addPair(r.class_name, r.subject_name, r.staff_name, r.staff_id));
       (tchAsg || []).forEach(r => addPair(r.class_name, r.subject_name, r.staff_name));
 
       const matched = (sylRows || []).filter(it => {
