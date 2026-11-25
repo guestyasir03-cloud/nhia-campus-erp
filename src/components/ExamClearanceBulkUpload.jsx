@@ -121,7 +121,7 @@ export default function ExamClearanceBulkUpload({ students, itemsList, user, onC
             const rawStr = String(rawVal).trim();
             if (rawStr === '' && !autoClearZero) return;
 
-            const amt = Number(rawStr.replace(/[^0-9.-]/g, '')) || 0;
+            const amt = Math.abs(Number(rawStr.replace(/[^0-9.-]/g, '')) || 0);
             const remarks = remCol ? String(row[remCol] || '').trim() : '';
             records.push({
               adm_no: student.adm_key,
@@ -139,7 +139,7 @@ export default function ExamClearanceBulkUpload({ students, itemsList, user, onC
               const rawStr = String(row[k] ?? '').trim();
               if (rawStr === '' && !autoClearZero) return;
               const isTextCleared = ['cleared', 'ok', 'yes', 'paid', 'done'].includes(rawStr.toLowerCase());
-              const amt = isTextCleared ? 0 : (Number(rawStr.replace(/[^0-9.-]/g, '')) || 0);
+              const amt = isTextCleared ? 0 : Math.abs(Number(rawStr.replace(/[^0-9.-]/g, '')) || 0);
               records.push({
                 adm_no: student.adm_key,
                 student_name: student.name,
