@@ -334,26 +334,36 @@ export default function SyllabusModule({ onBack, user }) {
           .from('subject_assignments')
           .upsert(subRows, { onConflict: 'class_name,subject_name', ignoreDuplicates: true });
 
-        const withTeachers = subRows.filter(s => s.staff_name);
-        if (withTeachers.length > 0) {
-          await Promise.all(
-            withTeachers.map(s =>
-              supabase
-                .from('subject_assignments')
-                .update({ staff_id: s.staff_id, staff_name: s.staff_name })
-                .eq('class_name', s.class_name)
-                .eq('subject_name', s.subject_name)
-            )
+        const { data: existingSubs } = await supabase
+          .from('subject_assignments')
+          .select('id, subject_name')
+          .eq('class_name', uploadClass);
+
+        const normSub = v => String(v || '').toLowerCase().replace(/[\u2013\u2014\-]/g, ' ').replace(/\s+/g, ' ').trim();
+        const withTeachers = subRows.filter(s => s.staff_id || s.staff_name);
+        let assignedCount = 0;
+
+        for (const s of withTeachers) {
+          const target = (existingSubs || []).find(
+            e => normSub(e.subject_name) === normSub(s.subject_name) || sameSubject(e.subject_name, s.subject_name)
           );
+          if (target) {
+            const { error: uErr } = await supabase
+              .from('subject_assignments')
+              .update({ staff_id: s.staff_id, staff_name: s.staff_name })
+              .eq('id', target.id);
+            if (!uErr) assignedCount++;
+          }
         }
         syncedCount = subRows.length;
+        window.__lastAssignedCount = assignedCount;
       }
     }
     setUploading(false);
 
     setParsedRows([]);
     setShowExcelBox(false);
-    setMsg(`Uploaded ${payload.length} syllabus topics for ${uploadClass}${syncedCount ? ` & synced ${syncedCount} subjects` : ''}!`);
+    setMsg(`Uploaded ${payload.length} topics for ${uploadClass}${syncedCount ? ` | Synced ${syncedCount} subjects | Assigned ${window.__lastAssignedCount || 0} teachers` : ''}!`);
     loadAll();
   }
 
