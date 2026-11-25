@@ -289,7 +289,7 @@ export default function SyllabusModule({ onBack, user }) {
 
     let syncedCount = 0;
     if (autoSyncSubjects) {
-      const { data: staffList } = await supabase.from('staff').select('id, name');
+      const { data: staffList } = await supabase.from('staff').select('staff_id, name');
       const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/dh/g, 'd').replace(/th/g, 't').replace(/ee/g, 'i').replace(/oo/g, 'u');
       const findStaff = (tName) => {
         if (!tName) return null;
@@ -308,7 +308,7 @@ export default function SyllabusModule({ onBack, user }) {
         const key = `${uploadClass.toLowerCase()}|${subName.toLowerCase()}`;
         const tName = String(r.teacher_name || '').trim();
         const matchedStaff = findStaff(tName);
-        const resolvedId = matchedStaff?.id || null;
+        const resolvedId = matchedStaff?.staff_id || null;
         const resolvedName = matchedStaff?.name || (tName || null);
 
         if (!subMap.has(key)) {
