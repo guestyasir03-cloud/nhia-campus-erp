@@ -289,28 +289,63 @@ export default function SyllabusModule({ onBack, user }) {
 
     let syncedCount = 0;
     if (autoSyncSubjects) {
+      const { data: staffList } = await supabase.from('staff').select('id, name');
+      const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/dh/g, 'd').replace(/th/g, 't').replace(/ee/g, 'i').replace(/oo/g, 'u');
+      const findStaff = (tName) => {
+        if (!tName) return null;
+        const tN = norm(tName);
+        if (!tN) return null;
+        return (staffList || []).find(st => {
+          const sN = norm(st.name);
+          return sN === tN || sN.includes(tN) || tN.includes(sN);
+        }) || null;
+      };
+
       const subMap = new Map();
       payload.forEach(r => {
         const subName = String(r.subject || '').trim();
         if (!subName) return;
         const key = `${uploadClass.toLowerCase()}|${subName.toLowerCase()}`;
+        const tName = String(r.teacher_name || '').trim();
+        const matchedStaff = findStaff(tName);
+        const resolvedId = matchedStaff?.id || null;
+        const resolvedName = matchedStaff?.name || (tName || null);
+
         if (!subMap.has(key)) {
           subMap.set(key, {
             class_name: uploadClass,
             subject_name: subName,
-            staff_id: null,
-            staff_name: null,
+            staff_id: resolvedId,
+            staff_name: resolvedName,
             has_w1_w4: false,
             has_midterm: false,
             has_hifz: false
           });
+        } else if (resolvedName && !subMap.get(key).staff_name) {
+          const existing = subMap.get(key);
+          existing.staff_id = resolvedId;
+          existing.staff_name = resolvedName;
         }
       });
+
       const subRows = Array.from(subMap.values());
       if (subRows.length > 0) {
         await supabase
           .from('subject_assignments')
           .upsert(subRows, { onConflict: 'class_name,subject_name', ignoreDuplicates: true });
+
+        const withTeachers = subRows.filter(s => s.staff_name);
+        if (withTeachers.length > 0) {
+          await Promise.all(
+            withTeachers.map(s =>
+              supabase
+                .from('subject_assignments')
+                .update({ staff_id: s.staff_id, staff_name: s.staff_name })
+                .eq('class_name', s.class_name)
+                .eq('subject_name', s.subject_name)
+            )
+          );
+        }
         syncedCount = subRows.length;
       }
     }
