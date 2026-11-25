@@ -2,6 +2,18 @@
 import { CheckCircle2, Circle, BookOpen, ChevronRight } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
+function sameSubject(a, b) {
+  const x = String(a || "").toLowerCase().trim();
+  const y = String(b || "").toLowerCase().trim();
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const toks = s => s.split(/[\s\-\u2013\u2014_/(),.:;]+/).filter(Boolean);
+  const tx = toks(x);
+  const ty = toks(y);
+  if (!tx.length || !ty.length) return false;
+  return tx.every(w => ty.includes(w)) || ty.every(w => tx.includes(w));
+}
+
 export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
   const [weekNo, setWeekNo] = useState(1);
   const [topics, setTopics] = useState([]);
@@ -66,7 +78,7 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
         if (myPairs.length === 0) return false;
         const cL = (it.class_name || '').toLowerCase().trim();
         const sL = (it.subject || '').toLowerCase().trim();
-        return myPairs.some(p => p.cls === cL && (sL.includes(p.sub) || p.sub.includes(sL)));
+        return myPairs.some(p => p.cls === cL && sameSubject(sL, p.sub));
       });
 
       setTopics(matched);

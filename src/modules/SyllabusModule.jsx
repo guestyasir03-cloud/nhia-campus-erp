@@ -18,6 +18,18 @@ function parseWeekRange(raw) {
   return { week_no: 0, week_end: 0, week_label: txt || 'General' };
 }
 
+function sameSubject(a, b) {
+  const x = String(a || "").toLowerCase().trim();
+  const y = String(b || "").toLowerCase().trim();
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const toks = s => s.split(/[\s\-\u2013\u2014_/(),.:;]+/).filter(Boolean);
+  const tx = toks(x);
+  const ty = toks(y);
+  if (!tx.length || !ty.length) return false;
+  return tx.every(w => ty.includes(w)) || ty.every(w => tx.includes(w));
+}
+
 export default function SyllabusModule({ onBack, user }) {
   const isSyllabusAdminOnly = ['admin', 'super_admin'].includes(String(user?.role || '').toLowerCase());
   const isAdmin = ['admin', 'coordinator'].includes(user?.role);
@@ -149,7 +161,7 @@ export default function SyllabusModule({ onBack, user }) {
         if (!matched) {
           for (const k of mySubjectKeys) {
             const [ac, asub] = k.split('|');
-            if (ac === clsL && (subL.includes(asub) || asub.includes(subL))) { matched = true; break; }
+            if (ac === clsL && sameSubject(subL, asub)) { matched = true; break; }
           }
         }
         if (!matched) return false;
@@ -256,7 +268,7 @@ export default function SyllabusModule({ onBack, user }) {
     const payload = parsedRows.map(r => {
       const subL = r.subject.toLowerCase();
       const matchAsg = assignments.find(
-        a => a.class_name === uploadClass && (subL.includes(a.subject.toLowerCase()) || a.subject.toLowerCase().includes(subL))
+        a => a.class_name === uploadClass && sameSubject(subL, a.subject)
       );
       return {
         class_name: uploadClass,
