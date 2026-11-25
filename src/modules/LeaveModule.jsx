@@ -391,7 +391,11 @@ export default function LeaveModule({ user, onBack }) {
         : supabase.from('students').select('adm_no, name, class_name').order('name')
     ]);
 
-    setLeaves(lvData || []);
+    const normalizedLeaves = (lvData || []).map(l =>
+      l.status !== 'Returned' && isLeaveScheduledUpcoming(l) ? { ...l, status: 'Upcoming' } : l
+    );
+    writeCache('nhia_leaves_v1', normalizedLeaves);
+    setLeaves(normalizedLeaves);
     setStudents(stData || []);
     setLoading(false);
   }
