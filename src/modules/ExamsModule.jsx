@@ -81,7 +81,7 @@ export default function ExamsModule({ onBack, user }) {
   }, []);
 
   async function loadClasses() {
-    const { data } = await supabase.from('students').select('class_name');
+    const { data } = await supabase.from('students').select('class_name, roll_no');
     if (data) {
       setClasses([...new Set(data.map(d => d.class_name).filter(Boolean))].filter(c => c !== 'ALUMNI').sort());
     }
@@ -177,7 +177,7 @@ export default function ExamsModule({ onBack, user }) {
     const dbSubject = getDbSubjectKey(targetSub, targetMode);
 
     const [{ data: stData }, { data: mkData }] = await Promise.all([
-      supabase.from('students').select('adm_no, name').eq('class_name', targetClass).order('name'),
+      supabase.from('students').select('adm_no, name, roll_no').eq('class_name', targetClass).order('roll_no', { ascending: true, nullsFirst: false }).order('name'),
       supabase.from('marks').select('*').eq('class_name', targetClass).eq('subject', dbSubject)
     ]);
 
@@ -274,7 +274,7 @@ export default function ExamsModule({ onBack, user }) {
     if (!selectedClass) return alert('ക്ലാസ്സ് തിരഞ്ഞെടുക്കുക!');
     setLoading(true);
     const [{ data: stData }, { data: mkData }] = await Promise.all([
-      supabase.from('students').select('adm_no, name').eq('class_name', selectedClass).order('name'),
+      supabase.from('students').select('adm_no, name, roll_no').eq('class_name', selectedClass).order('roll_no', { ascending: true, nullsFirst: false }).order('name'),
       supabase.from('marks').select('*').eq('class_name', selectedClass)
     ]);
 
@@ -321,7 +321,7 @@ export default function ExamsModule({ onBack, user }) {
     ] = await Promise.all([
       supabase.from('students').select('*').eq('adm_no', targetAdm).maybeSingle(),
       supabase.from('marks').select('*').eq('adm_no', targetAdm),
-      supabase.from('students').select('adm_no, class_name'),
+      supabase.from('students').select('adm_no, class_name, roll_no'),
       supabase.from('marks').select('adm_no, final_mark'),
       supabase.from('spot_attendance').select('status').eq('adm_no', targetAdm)
     ]);
@@ -674,7 +674,11 @@ const handleEnterDown = (e) => {
                       return (
                         <tr key={s.adm_no} style={{ borderBottom: '1px solid #f1f5f9' }}>
                           <td style={{ padding: 10, textAlign: 'left', fontWeight: 600 }}>
-                            {s.name} <span style={{ fontSize: 10, fontWeight: 800, color: '#1e3a8a', background: '#dbeafe', padding: '1px 6px', borderRadius: 5, marginLeft: 4 }}>Roll #{s.roll_no ?? s.rollNumber ?? (students.indexOf(s) + 1)}</span><div style={{ fontSize: 10, color: '#64748b' }}>{s.adm_no}</div>
+                            <div style={{ lineHeight: 1.25 }}>{s.name}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3, flexWrap: 'nowrap' }}>
+                              <span style={{ fontSize: 10, fontWeight: 800, color: '#1e3a8a', background: '#dbeafe', padding: '1px 6px', borderRadius: 5, whiteSpace: 'nowrap', flexShrink: 0 }}>Roll #{s.roll_no ?? s.rollNumber ?? (students.indexOf(s) + 1)}</span>
+                              <span style={{ fontSize: 10, color: '#64748b', whiteSpace: 'nowrap' }}>#{s.adm_no}</span>
+                            </div>
                           </td>
                           {isSingleMarkMode ? (
                             <td style={{ padding: 6 }}>

@@ -269,16 +269,15 @@ export default function StudentsModule({ onBack, user }) {
     setLoading(true);
     setMsg('');
 
-    const updates = rollList.map(s => ({
-      adm_no: s.adm_no,
-      name: s.name,
-      class_name: rollClass,
-      roll_no: s.roll_no === '' || s.roll_no === null ? null : Number(s.roll_no)
-    }));
-
-    const { error } = await supabase.from('students').upsert(updates, { onConflict: 'adm_no' });
+    const results = await Promise.all(
+      rollList.map(s => {
+        const val = s.roll_no === '' || s.roll_no === null || s.roll_no === undefined ? null : Number(s.roll_no);
+        return supabase.from('students').update({ roll_no: val }).eq('adm_no', s.adm_no);
+      })
+    );
+    const firstErr = results.find(r => r.error)?.error;
     setLoading(false);
-    if (error) setMsg('Error: ' + error.message);
+    if (firstErr) setMsg('Error: ' + firstErr.message);
     else setMsg(`Roll numbers updated for ${rollClass}.`);
   }
 
