@@ -1,6 +1,7 @@
 import html2pdf from 'html2pdf.js';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { readCache, writeCache } from '../lib/offlineCache';
 import { exportReportPDF, exportReportJPEG, exportReportCSV } from '../lib/exportReport';
 import {
   CalendarClock, CheckCircle2, Trash2, Search, ChevronRight,
@@ -30,6 +31,21 @@ function isLeaveOverdue(d) {
   const exp = new Date(`${d.exp_end_date}T${d.exp_end_time || '23:59'}`);
   return new Date() > exp;
 }
+
+function getLeaveStartDateTime(d) {
+  if (!d?.start_date) return null;
+  const t = d.start_time && d.start_time.trim() ? d.start_time.trim() : '00:00';
+  const dt = new Date(`${d.start_date}T${t}`);
+  return Number.isNaN(dt.getTime()) ? null : dt;
+}
+
+function isLeaveScheduledUpcoming(d) {
+  if (!d || d.status === 'Returned') return false;
+  const startDt = getLeaveStartDateTime(d);
+  if (!startDt) return false;
+  return startDt.getTime() > Date.now();
+}
+
 
 function calculateLeaveHours(d) {
   if (!d.start_date) return 0;
@@ -328,14 +344,26 @@ export default function LeaveModule({ user, onBack }) {
   }, []);
 
   async function loadInitialData() {
-    setLoading(true);
+    const cachedLeaves = readCache('nhia_leaves_v1', null);
+    if (Array.isArray(cachedLeaves) && cachedLeaves.length > 0) {
+      setLeaves(cachedLeaves.map(l => l.status !== 'Returned' && isLeaveScheduledUpcoming(l) ? { ...l, status: 'Upcoming' } : l));
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     const today = getTodayStr();
 
-    await supabase
+    const { data: upcRows } = await supabase
       .from('student_leaves')
-      .update({ status: 'Active' })
+      .select('id, start_date, start_time')
       .eq('status', 'Upcoming')
       .lte('start_date', today);
+    if (Array.isArray(upcRows) && upcRows.length > 0) {
+      const dueIds = upcRows.filter(r => !isLeaveScheduledUpcoming(r)).map(r => r.id);
+      if (dueIds.length > 0) {
+        await supabase.from('student_leaves').update({ status: 'Active' }).in('id', dueIds);
+      }
+    }
 
     let leaveQuery = supabase
       .from('student_leaves')
@@ -516,7 +544,7 @@ export default function LeaveModule({ user, onBack }) {
       }
     }
 
-    const status = startDate > todayStr ? 'Upcoming' : 'Active';
+    const status = isLeaveScheduledUpcoming({ status: 'Active', start_date: startDate, start_time: startTime }) ? 'Upcoming' : 'Active';
     const base = {
       class_name: formClass,
       leave_type: leaveType,
