@@ -1,6 +1,7 @@
 ﻿import React, { useState, useEffect, useMemo } from 'react';
 import { ArrowLeft, RefreshCw, Plus, Trash2, Edit2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import ExamClearanceBulkUpload from '../components/ExamClearanceBulkUpload';
 
 const PAGE_SIZE = 25;
 
@@ -620,13 +621,14 @@ export default function ExamClearanceModule({ onBack, user }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {canManageItems && (
+          {(!isStudent && (canManageItems || visibleItemNames.length > 0)) && (
             <div style={{ display: 'flex', background: '#e2e8f0', padding: 3, borderRadius: 10, gap: 3, flexWrap: 'wrap' }}>
               {[
                 { id: 'clearance', label: 'Clearance' },
-                { id: 'items', label: `Items & Fees (${itemsList.length})` },
+                { id: 'bulk', label: 'Bulk Excel' },
+                ...(canManageItems ? [{ id: 'items', label: `Items & Fees (${itemsList.length})` }] : []),
                 ...(isAdmin ? [{ id: 'staff', label: 'Staff Access' }] : []),
-                { id: 'reports', label: 'Reports' }
+                ...(canManageItems ? [{ id: 'reports', label: 'Reports' }] : [])
               ].map(t => (
                 <button
                   key={t.id}
@@ -726,6 +728,20 @@ export default function ExamClearanceModule({ onBack, user }) {
             </div>
           );
         })
+      )}
+
+      {/* BULK EXCEL UPLOAD TAB */}
+      {!isStudent && activeTab === 'bulk' && (
+        <ExamClearanceBulkUpload
+          students={allowedStudents}
+          itemsList={isAdmin || isClassTeacher ? itemsList : itemsList.filter(i => visibleItemNames.includes(i.name))}
+          user={user}
+          onComplete={(message) => {
+            setMsg(message);
+            setActiveTab('clearance');
+            loadAll();
+          }}
+        />
       )}
 
       {/* ADMIN & CLASS TEACHER: ITEMS & FEES MANAGER */}
