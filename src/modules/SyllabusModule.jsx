@@ -218,8 +218,14 @@ export default function SyllabusModule({ onBack, user }) {
           const topic = String(row.Topic || row.topic || '').trim();
           if (!subject || !topic) return;
           const wk = parseWeekRange(row.Weeks || row.Week || row.weeks || '');
+          const teacherKey = Object.keys(row).find(k => /teacher|staff|faculty/i.test(k));
+          const teacher_name = String(
+            (teacherKey ? row[teacherKey] : '') ||
+            row.Teacher || row.teacher || row['Teacher Name'] || row.Staff || row.staff || row.__EMPTY || ''
+          ).trim();
           clean.push({
             subject,
+            teacher_name,
             code: String(row.Code || row.code || '').trim(),
             textbook: String(row.Textbook || row.textbook || '').trim(),
             periods_per_week: String(row['Periods/week'] || row.Periods || '').trim(),
@@ -255,7 +261,7 @@ export default function SyllabusModule({ onBack, user }) {
       return {
         class_name: uploadClass,
         subject: r.subject,
-        teacher_name: matchAsg?.teacher_name || '',
+        teacher_name: r.teacher_name || matchAsg?.teacher_name || '',
         code: r.code,
         textbook: r.textbook,
         periods_per_week: r.periods_per_week,
