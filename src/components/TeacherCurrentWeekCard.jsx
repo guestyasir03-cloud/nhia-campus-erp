@@ -46,7 +46,7 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
           .from('syllabus_weeks')
           .select('*')
           .lte('week_no', curWk)
-          .gte('week_end', curWk)
+          .or(`week_end.gte.${curWk},week_end.is.null`)
           .order('class_name')
           .order('subject')
           .limit(2000)
