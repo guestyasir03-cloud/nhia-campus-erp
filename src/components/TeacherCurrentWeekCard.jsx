@@ -25,21 +25,34 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
     let active = true;
 
     async function loadMyWeek() {
-      const [
-        { data: setRow },
-        { data: subAsg },
-        { data: tchAsg },
-        { data: sylRows }
-      ] = await Promise.all([
-        supabase.from('app_settings').select('value').eq('key', 'current_syllabus_week').maybeSingle(),
-        supabase.from('subject_assignments').select('class_name, subject_name, staff_name'),
-        supabase.from('teacher_assignments').select('class_name, subject_name, staff_name'),
-        supabase.from('syllabus_weeks').select('*').order('class_name').order('subject')
-      ]);
+      const { data: setRow } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'current_syllabus_week')
+        .maybeSingle();
 
       if (!active) return;
 
       const curWk = Math.max(1, parseInt(setRow?.value || '1', 10) || 1);
+
+      const [
+        { data: subAsg },
+        { data: tchAsg },
+        { data: sylRows }
+      ] = await Promise.all([
+        supabase.from('subject_assignments').select('class_name, subject_name, staff_name').limit(2000),
+        supabase.from('teacher_assignments').select('class_name, subject_name, staff_name').limit(2000),
+        supabase
+          .from('syllabus_weeks')
+          .select('*')
+          .lte('week_no', curWk)
+          .gte('week_end', curWk)
+          .order('class_name')
+          .order('subject')
+          .limit(2000)
+      ]);
+
+      if (!active) return;
       setWeekNo(curWk);
 
       const normName = (str) => String(str || '')
