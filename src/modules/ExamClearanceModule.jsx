@@ -73,8 +73,15 @@ export default function ExamClearanceModule({ onBack, user }) {
 
   const myPerm = useMemo(() => {
     if (isAdmin) return { assigned_items: ALL_ITEMS, assigned_classes: [] };
-    const sid = String(user?.staff_id || '');
-    return staffPerms[sid] || { assigned_items: [], assigned_classes: [] };
+    const sid = String(user?.staff_id || user?.id || '').trim().toLowerCase();
+    const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const uName = norm(user?.name);
+    const list = Object.values(staffPerms);
+    const found = list.find(p =>
+      (sid && String(p.staff_id || '').trim().toLowerCase() === sid) ||
+      (uName && norm(p.staff_name) && (norm(p.staff_name) === uName || norm(p.staff_name).includes(uName) || uName.includes(norm(p.staff_name))))
+    );
+    return found || { assigned_items: [], assigned_classes: [] };
   }, [isAdmin, user, staffPerms]);
 
   const visibleItems = isAdmin ? ALL_ITEMS : (myPerm.assigned_items || []);
