@@ -8,6 +8,7 @@ import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { flushOfflineQueue, getOfflineQueue } from './lib/offlineCache';
 const StudentsModule = lazy(() => import('./modules/StudentsModule'));
 const ExamsModule = lazy(() => import('./modules/ExamsModule'));
+const ExamClearanceModule = lazy(() => import('./modules/ExamClearanceModule'));
 const AttendanceModule = lazy(() => import('./modules/AttendanceModule'));
 const FinanceModule = lazy(() => import('./modules/FinanceModule'));
 const ActivityModule = lazy(() => import('./modules/ActivityModule'));
@@ -33,6 +34,7 @@ const DEFAULT_ROLES = ['admin', 'coordinator', 'teacher', 'student'];
 const DEFAULT_MODULES = [
   { id: 'feedback', name: 'Feedback', icon: 'Star', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'examinations', name: 'Examinations', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'exam_clearance', name: 'Exam Clearance', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'attendance', name: 'Attendance', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
   { id: 'leave', name: 'Leave Portal', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
     { id: 'gadgets', name: 'Gadget Registry', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
@@ -50,6 +52,7 @@ const DEFAULT_MODULES = [
 ];
 
 const SUB_MENUS = {
+  exam_clearance: ['14-item clearance', 'Bulk clear', 'Dues & remarks', 'Hall ticket ready', 'A4 print form'],
   examinations: ['Mark entry (W1–W4)', 'Hifz / Midterm entry', 'Class reports', 'Campus performance', 'Pending mark entry', 'Grade cards (PDF)'],
   attendance: ['Monthly register', 'Class-wise attendance', 'Attendance percentage', 'Pending alerts', 'Campus analysis'],
   students: ['Student directory', 'Add student', 'Admission numbers', 'Student profile', 'Bulk import'],
@@ -509,6 +512,8 @@ export default function App() {
           <StudentsModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'examinations' ? (
           <ExamsModule onBack={() => setActiveModule(null)} user={user} />
+        ) : activeModule === 'exam_clearance' ? (
+          <ExamClearanceModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'attendance' ? (
           <AttendanceModule onBack={() => setActiveModule(null)} user={user} />
         ) : activeModule === 'leave' ? (
