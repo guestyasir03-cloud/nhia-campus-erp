@@ -30,11 +30,27 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
       const curWk = Math.max(1, parseInt(setRow?.value || '1', 10) || 1);
       setWeekNo(curWk);
 
-      const me = (user?.name || '').toLowerCase().trim();
+      const normName = (str) => String(str || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '')
+        .replace(/dh/g, 'd')
+        .replace(/th/g, 't')
+        .replace(/ee/g, 'i')
+        .replace(/oo/g, 'u');
+
+      const meRaw = (user?.name || '').toLowerCase().trim();
+      const meNorm = normName(meRaw);
+      const isSameTeacher = (t) => {
+        if (!t || !meNorm) return false;
+        const tRaw = String(t).toLowerCase().trim();
+        const tNorm = normName(tRaw);
+        return tRaw.includes(meRaw) || tNorm.includes(meNorm) || meNorm.includes(tNorm);
+      };
+
       const myPairs = [];
       const addPair = (c, s, t) => {
         if (!c || !s || !t) return;
-        if (String(t).toLowerCase().includes(me)) {
+        if (isSameTeacher(t)) {
           myPairs.push({ cls: String(c).trim().toLowerCase(), sub: String(s).trim().toLowerCase() });
         }
       };
@@ -46,9 +62,8 @@ export default function TeacherCurrentWeekCard({ user, onOpenSyllabus }) {
         const end = Number(it.week_end) || start;
         if (!(start > 0 && curWk >= start && curWk <= end)) return false;
 
-        if (myPairs.length === 0) {
-          return (it.teacher_name || '').toLowerCase().includes(me);
-        }
+        if (isSameTeacher(it.teacher_name)) return true;
+        if (myPairs.length === 0) return false;
         const cL = (it.class_name || '').toLowerCase().trim();
         const sL = (it.subject || '').toLowerCase().trim();
         return myPairs.some(p => p.cls === cL && (sL.includes(p.sub) || p.sub.includes(sL)));
