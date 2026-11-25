@@ -88,8 +88,14 @@ export default function ExamClearanceModule({ onBack, user }) {
 
   const allowedStudents = useMemo(() => {
     if (isStudent) {
-      const myAdm = String(user?.adm_no || user?.admission_no || '').trim().toLowerCase();
-      return students.filter(s => s.adm_key.toLowerCase() === myAdm);
+      const myIds = [user?.adm_no, user?.admission_no, user?.student_id, user?.username, user?.id]
+        .filter(Boolean)
+        .map(v => String(v).trim().toLowerCase());
+      const norm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const myName = norm(user?.name);
+      const byId = students.filter(s => myIds.includes(s.adm_key.toLowerCase()) || myIds.includes(String(s.id || '').trim().toLowerCase()));
+      if (byId.length > 0) return byId;
+      return myName ? students.filter(s => norm(s.name) === myName) : [];
     }
     if (isAdmin) return students;
     const cls = myPerm.assigned_classes || [];
