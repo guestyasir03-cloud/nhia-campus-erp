@@ -17,6 +17,7 @@ export default function ExamClearanceModule({ onBack, user }) {
   const [staffList, setStaffList] = useState([]);
   const [staffPerms, setStaffPerms] = useState({});
   const [clearanceMap, setClearanceMap] = useState({});
+  const [customByAdm, setCustomByAdm] = useState({});
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState('');
 
@@ -27,18 +28,25 @@ export default function ExamClearanceModule({ onBack, user }) {
   const [page, setPage] = useState(1);
   const [printAdm, setPrintAdm] = useState(null);
 
+  // Per-student special due modal state
+  const [specialStudent, setSpecialStudent] = useState(null);
+  const [specialName, setSpecialName] = useState('');
+  const [specialAmt, setSpecialAmt] = useState('');
+  const [specialRemarks, setSpecialRemarks] = useState('');
+
   // Staff permission editor
   const [editStaffId, setEditStaffId] = useState('');
   const [editItems, setEditItems] = useState([]);
   const [editClasses, setEditClasses] = useState([]);
 
-  // Dynamic Item Manager state (Admin)
+  // Dynamic Item Manager state (Admin & Class Teachers)
   const [itemFormId, setItemFormId] = useState(null);
   const [itemName, setItemName] = useState('');
   const [itemIsCommon, setItemIsCommon] = useState(true);
   const [itemClasses, setItemClasses] = useState([]);
-  const [itemAmtType, setItemAmtType] = useState('variable');
+  const [itemAmtType, setItemAmtType] = useState('variable'); // 'variable' | 'fixed' | 'class_wise'
   const [itemFixedAmt, setItemFixedAmt] = useState('');
+  const [itemClassAmounts, setItemClassAmounts] = useState({});
 
   async function loadAll() {
     setLoading(true);
@@ -64,10 +72,16 @@ export default function ExamClearanceModule({ onBack, user }) {
     setStaffPerms(pMap);
 
     const cMap = {};
+    const custMap = {};
     (clrRes.data || []).forEach(c => {
       cMap[`${c.adm_no}|${c.item_name}`] = c;
+      if (c.is_custom) {
+        if (!custMap[c.adm_no]) custMap[c.adm_no] = [];
+        custMap[c.adm_no].push(c.item_name);
+      }
     });
     setClearanceMap(cMap);
+    setCustomByAdm(custMap);
     setLoading(false);
   }
 
@@ -96,11 +110,23 @@ export default function ExamClearanceModule({ onBack, user }) {
     return found || { assigned_items: [], assigned_classes: [] };
   }, [isAdmin, user, staffPerms, itemsList]);
 
+  // Class teacher = non-admin staff assigned to specific class(es)
+  const isClassTeacher = !isAdmin && !isStudent && (myPerm.assigned_classes || []).length > 0;
+  const canManageItems = isAdmin || isClassTeacher;
+  const manageableClasses = isAdmin ? allClasses : (myPerm.assigned_classes || []);
+
+  useEffect(() => {
+    if (isClassTeacher) {
+      setItemIsCommon(false);
+      setItemClasses(myPerm.assigned_classes || []);
+    }
+  }, [isClassTeacher, myPerm.assigned_classes]);
+
   const visibleItemNames = useMemo(() => {
     const activeNames = new Set(itemsList.map(i => i.name));
-    if (isAdmin) return itemsList.map(i => i.name);
+    if (isAdmin || isClassTeacher) return itemsList.map(i => i.name);
     return (myPerm.assigned_items || []).filter(n => activeNames.has(n));
-  }, [isAdmin, myPerm, itemsList]);
+  }, [isAdmin, isClassTeacher, myPerm, itemsList]);
 
   const allowedStudents = useMemo(() => {
     if (isStudent) {
@@ -119,33 +145,50 @@ export default function ExamClearanceModule({ onBack, user }) {
     return students.filter(s => cls.includes(s.class_name));
   }, [students, isAdmin, isStudent, user, myPerm]);
 
-  // Items applicable to a specific student's class (Common + Class-specific)
+  function getDefaultDueFor(itemNameStr, clsName) {
+    const cfg = itemByName[itemNameStr];
+    if (!cfg) return 0;
+    if (cfg.amount_type === 'fixed') return Number(cfg.fixed_amount) || 0;
+    if (cfg.amount_type === 'class_wise') return Number(cfg.class_amounts?.[clsName]) || 0;
+    return 0;
+  }
+
   function getItemsForClass(clsName) {
     return itemsList.filter(it => it.is_common || (it.target_classes || []).includes(clsName));
   }
 
-  function getItemRec(admKey, itemNameStr) {
+  function getStudentAllItems(s) {
+    const base = getItemsForClass(s.class_name).map(it => ({ ...it, is_custom: false }));
+    const baseNames = new Set(base.map(b => b.name));
+    const customs = (customByAdm[s.adm_key] || [])
+      .filter(n => !baseNames.has(n))
+      .map(n => ({ name: n, is_common: false, amount_type: 'variable', fixed_amount: 0, is_custom: true }));
+    return [...base, ...customs];
+  }
+
+  function getItemRec(admKey, itemNameStr, clsName = '') {
     const existing = clearanceMap[`${admKey}|${itemNameStr}`];
     if (existing) return existing;
-    const cfg = itemByName[itemNameStr];
-    const defaultDue = cfg && cfg.amount_type === 'fixed' ? (Number(cfg.fixed_amount) || 0) : 0;
+    const defaultDue = getDefaultDueFor(itemNameStr, clsName);
     return {
       adm_no: admKey,
+      class_name: clsName,
       item_name: itemNameStr,
       is_cleared: false,
       amount_due: defaultDue,
       remarks: '',
       cleared_by: null,
-      cleared_at: null
+      cleared_at: null,
+      is_custom: false
     };
   }
 
   function getStats(s) {
-    const applicable = getItemsForClass(s.class_name);
+    const applicable = getStudentAllItems(s);
     let clearedCount = 0;
     let totalDue = 0;
     for (let i = 0; i < applicable.length; i++) {
-      const rec = getItemRec(s.adm_key, applicable[i].name);
+      const rec = getItemRec(s.adm_key, applicable[i].name, s.class_name);
       if (rec.is_cleared) clearedCount++;
       else totalDue += Number(rec.amount_due) || 0;
     }
@@ -156,11 +199,11 @@ export default function ExamClearanceModule({ onBack, user }) {
 
   async function toggleItem(student, itemNameStr) {
     const key = `${student.adm_key}|${itemNameStr}`;
-    const prev = getItemRec(student.adm_key, itemNameStr);
-    const cfg = itemByName[itemNameStr];
+    const prev = getItemRec(student.adm_key, itemNameStr, student.class_name);
     const nextCleared = !prev.is_cleared;
     const now = new Date().toISOString();
-    const fallbackDue = cfg && cfg.amount_type === 'fixed' ? (Number(cfg.fixed_amount) || 0) : (Number(prev.amount_due) || 0);
+    const defDue = getDefaultDueFor(itemNameStr, student.class_name);
+    const fallbackDue = defDue > 0 ? defDue : (Number(prev.amount_due) || 0);
 
     const nextRec = {
       adm_no: student.adm_key,
@@ -170,7 +213,8 @@ export default function ExamClearanceModule({ onBack, user }) {
       amount_due: nextCleared ? 0 : fallbackDue,
       remarks: prev.remarks || '',
       cleared_by: nextCleared ? (user?.name || 'Staff') : null,
-      cleared_at: nextCleared ? now : null
+      cleared_at: nextCleared ? now : null,
+      is_custom: Boolean(prev.is_custom)
     };
     setClearanceMap(m => ({ ...m, [key]: nextRec }));
     await supabase.from('exam_clearances').upsert(nextRec, { onConflict: 'adm_no,item_name' });
@@ -178,13 +222,14 @@ export default function ExamClearanceModule({ onBack, user }) {
 
   async function toggleAllForStudent(student, studentVisibleItems) {
     if (!studentVisibleItems.length) return;
-    const allCleared = studentVisibleItems.every(it => getItemRec(student.adm_key, it.name).is_cleared);
+    const allCleared = studentVisibleItems.every(it => getItemRec(student.adm_key, it.name, student.class_name).is_cleared);
     const nextCleared = !allCleared;
     const now = new Date().toISOString();
     const updates = {};
     const rows = studentVisibleItems.map(it => {
-      const prev = getItemRec(student.adm_key, it.name);
-      const fallbackDue = it.amount_type === 'fixed' ? (Number(it.fixed_amount) || 0) : (Number(prev.amount_due) || 0);
+      const prev = getItemRec(student.adm_key, it.name, student.class_name);
+      const defDue = getDefaultDueFor(it.name, student.class_name);
+      const fallbackDue = defDue > 0 ? defDue : (Number(prev.amount_due) || 0);
       const rec = {
         adm_no: student.adm_key,
         class_name: student.class_name || '',
@@ -193,7 +238,8 @@ export default function ExamClearanceModule({ onBack, user }) {
         amount_due: nextCleared ? 0 : fallbackDue,
         remarks: prev.remarks || '',
         cleared_by: nextCleared ? (user?.name || 'Staff') : null,
-        cleared_at: nextCleared ? now : null
+        cleared_at: nextCleared ? now : null,
+        is_custom: Boolean(it.is_custom || prev.is_custom)
       };
       updates[`${student.adm_key}|${it.name}`] = rec;
       return rec;
@@ -204,7 +250,7 @@ export default function ExamClearanceModule({ onBack, user }) {
 
   async function updateDueOrRemark(student, itemNameStr, field, value) {
     const key = `${student.adm_key}|${itemNameStr}`;
-    const prev = getItemRec(student.adm_key, itemNameStr);
+    const prev = getItemRec(student.adm_key, itemNameStr, student.class_name);
     const amount = field === 'amount_due' ? (Number(value) || 0) : (Number(prev.amount_due) || 0);
     const remarks = field === 'remarks' ? String(value || '').trim() : (prev.remarks || '');
     if (amount === (Number(prev.amount_due) || 0) && remarks === (prev.remarks || '')) return;
@@ -217,10 +263,57 @@ export default function ExamClearanceModule({ onBack, user }) {
       amount_due: amount,
       remarks,
       cleared_by: amount > 0 ? null : prev.cleared_by,
-      cleared_at: amount > 0 ? null : prev.cleared_at
+      cleared_at: amount > 0 ? null : prev.cleared_at,
+      is_custom: Boolean(prev.is_custom)
     };
     setClearanceMap(m => ({ ...m, [key]: nextRec }));
     await supabase.from('exam_clearances').upsert(nextRec, { onConflict: 'adm_no,item_name' });
+  }
+
+  // Add per-student special due
+  async function saveSpecialDue(e) {
+    e.preventDefault();
+    if (!specialStudent) return;
+    const cleanName = specialName.trim().toUpperCase();
+    if (!cleanName) return;
+    const rec = {
+      adm_no: specialStudent.adm_key,
+      class_name: specialStudent.class_name || '',
+      item_name: cleanName,
+      is_cleared: false,
+      amount_due: Number(specialAmt) || 0,
+      remarks: specialRemarks.trim(),
+      cleared_by: null,
+      cleared_at: null,
+      is_custom: true
+    };
+    const { error } = await supabase.from('exam_clearances').upsert(rec, { onConflict: 'adm_no,item_name' });
+    if (error) return setMsg('Error: ' + error.message);
+
+    setClearanceMap(m => ({ ...m, [`${rec.adm_no}|${rec.item_name}`]: rec }));
+    setCustomByAdm(prev => {
+      const arr = prev[rec.adm_no] || [];
+      return arr.includes(rec.item_name) ? prev : { ...prev, [rec.adm_no]: [...arr, rec.item_name] };
+    });
+    setMsg(`Added "${cleanName}" (₹${rec.amount_due}) for ${specialStudent.name}!`);
+    setSpecialStudent(null);
+    setSpecialName('');
+    setSpecialAmt('');
+    setSpecialRemarks('');
+  }
+
+  async function deleteSpecialDue(student, itemNameStr) {
+    if (!window.confirm(`Remove special due "${itemNameStr}" from ${student.name}?`)) return;
+    await supabase.from('exam_clearances').delete().eq('adm_no', student.adm_key).eq('item_name', itemNameStr);
+    setClearanceMap(m => {
+      const copy = { ...m };
+      delete copy[`${student.adm_key}|${itemNameStr}`];
+      return copy;
+    });
+    setCustomByAdm(prev => ({
+      ...prev,
+      [student.adm_key]: (prev[student.adm_key] || []).filter(n => n !== itemNameStr)
+    }));
   }
 
   async function handleBulkClear() {
@@ -234,10 +327,10 @@ export default function ExamClearanceModule({ onBack, user }) {
     const updates = {};
     const rows = [];
     scopeStudents.forEach(s => {
-      const applicableNames = new Set(getItemsForClass(s.class_name).map(i => i.name));
+      const applicableNames = new Set(getStudentAllItems(s).map(i => i.name));
       itemsToClear.forEach(itName => {
         if (!applicableNames.has(itName)) return;
-        const prev = getItemRec(s.adm_key, itName);
+        const prev = getItemRec(s.adm_key, itName, s.class_name);
         if (!prev.is_cleared) {
           const rec = {
             adm_no: s.adm_key,
@@ -247,7 +340,8 @@ export default function ExamClearanceModule({ onBack, user }) {
             amount_due: 0,
             remarks: prev.remarks || '',
             cleared_by: user?.name || 'Staff',
-            cleared_at: now
+            cleared_at: now,
+            is_custom: Boolean(prev.is_custom)
           };
           updates[`${s.adm_key}|${itName}`] = rec;
           rows.push(rec);
@@ -263,22 +357,37 @@ export default function ExamClearanceModule({ onBack, user }) {
     setMsg(`Cleared ${rows.length} items successfully!`);
   }
 
-  // Admin: Add / Edit / Delete Clearance Items
+  // Admin & Class Teacher: Add / Edit / Delete Clearance Items
   async function saveItemConfig(e) {
     e.preventDefault();
     const cleanName = itemName.trim().toUpperCase();
     if (!cleanName) return;
-    if (!itemIsCommon && itemClasses.length === 0) {
-      return setMsg('Please select at least one class or mark as Common (All Classes).');
+
+    const finalIsCommon = isAdmin ? itemIsCommon : false;
+    const finalClasses = finalIsCommon ? [] : (isAdmin ? itemClasses : itemClasses.filter(c => manageableClasses.includes(c)));
+    if (!finalIsCommon && finalClasses.length === 0) {
+      return setMsg('Please select at least one class.');
     }
+
+    const cleanClassAmts = {};
+    if (itemAmtType === 'class_wise') {
+      const scopeCls = finalIsCommon ? allClasses : finalClasses;
+      scopeCls.forEach(c => {
+        const val = Number(itemClassAmounts[c]) || 0;
+        if (val > 0) cleanClassAmts[c] = val;
+      });
+    }
+
     const payload = {
       name: cleanName,
-      is_common: itemIsCommon,
-      target_classes: itemIsCommon ? [] : itemClasses,
+      is_common: finalIsCommon,
+      target_classes: finalClasses,
       amount_type: itemAmtType,
       fixed_amount: itemAmtType === 'fixed' ? (Number(itemFixedAmt) || 0) : 0,
+      class_amounts: itemAmtType === 'class_wise' ? cleanClassAmts : {},
       sort_order: itemFormId ? undefined : (itemsList.length + 1)
     };
+
     let err;
     if (itemFormId) {
       ({ error: err } = await supabase.from('exam_clearance_items').update(payload).eq('id', itemFormId));
@@ -297,19 +406,21 @@ export default function ExamClearanceModule({ onBack, user }) {
   function startEditItem(it) {
     setItemFormId(it.id);
     setItemName(it.name);
-    setItemIsCommon(Boolean(it.is_common));
+    setItemIsCommon(isAdmin ? Boolean(it.is_common) : false);
     setItemClasses(it.target_classes || []);
     setItemAmtType(it.amount_type || 'variable');
     setItemFixedAmt(it.fixed_amount ? String(it.fixed_amount) : '');
+    setItemClassAmounts(it.class_amounts || {});
   }
 
   function resetItemForm() {
     setItemFormId(null);
     setItemName('');
-    setItemIsCommon(true);
-    setItemClasses([]);
+    setItemIsCommon(isAdmin);
+    setItemClasses(isAdmin ? [] : manageableClasses);
     setItemAmtType('variable');
     setItemFixedAmt('');
+    setItemClassAmounts({});
   }
 
   async function deleteItemConfig(it) {
@@ -361,17 +472,21 @@ export default function ExamClearanceModule({ onBack, user }) {
   function exportMasterCSV(clsFilter = 'ALL') {
     const list = allowedStudents.filter(s => clsFilter === 'ALL' || s.class_name === clsFilter);
     const itemNames = itemsList.map(i => i.name);
-    const headers = ['Adm No', 'Name', 'Class', 'Status', 'Cleared', 'Total Due', ...itemNames];
+    const headers = ['Adm No', 'Name', 'Class', 'Status', 'Cleared', 'Total Due', ...itemNames, 'Special Dues'];
     const rows = list.map(s => {
       const st = getStats(s);
       const appSet = new Set(getItemsForClass(s.class_name).map(i => i.name));
       const cols = itemNames.map(it => {
         if (!appSet.has(it)) return 'N/A';
-        const c = getItemRec(s.adm_key, it);
+        const c = getItemRec(s.adm_key, it, s.class_name);
         if (c.is_cleared) return 'CLEARED';
         return Number(c.amount_due) > 0 ? `DUE ${c.amount_due}` : 'PENDING';
       });
-      return [s.adm_key, `"${s.name}"`, s.class_name, st.isApproved ? 'APPROVED' : 'PENDING', `${st.clearedCount}/${st.totalItems}`, st.totalDue, ...cols];
+      const customs = (customByAdm[s.adm_key] || []).map(n => {
+        const c = getItemRec(s.adm_key, n, s.class_name);
+        return `${n}:${c.is_cleared ? 'OK' : '₹' + (c.amount_due || 0)}`;
+      }).join(' | ');
+      return [s.adm_key, `"${s.name}"`, s.class_name, st.isApproved ? 'APPROVED' : 'PENDING', `${st.clearedCount}/${st.totalItems}`, st.totalDue, ...cols, `"${customs}"`];
     });
     downloadCSV(`exam_clearance_${clsFilter}.csv`, headers, rows);
   }
@@ -387,12 +502,12 @@ export default function ExamClearanceModule({ onBack, user }) {
     if (clsFilter !== 'ALL') text += `*Class: ${clsFilter}*\n`;
     text += `------------------------\n`;
     list.forEach((s, i) => {
-      const applicable = getItemsForClass(s.class_name);
+      const applicable = getStudentAllItems(s);
       const items = applicable.filter(it => {
-        const c = getItemRec(s.adm_key, it.name);
+        const c = getItemRec(s.adm_key, it.name, s.class_name);
         return duesOnly ? (!c.is_cleared && Number(c.amount_due) > 0) : !c.is_cleared;
       }).map(it => {
-        const c = getItemRec(s.adm_key, it.name);
+        const c = getItemRec(s.adm_key, it.name, s.class_name);
         return Number(c.amount_due) > 0 ? `${it.name} (Rs.${c.amount_due})` : it.name;
       });
       text += `${i + 1}. *${s.name}* (${s.adm_key}${clsFilter === 'ALL' ? ' - ' + s.class_name : ''})\n   ${duesOnly ? 'Dues' : 'Pending'}: ${items.join(', ')}\n`;
@@ -412,7 +527,7 @@ export default function ExamClearanceModule({ onBack, user }) {
       }
       return true;
     });
-  }, [allowedStudents, selectedClass, search, statusFilter, clearanceMap, itemsList]);
+  }, [allowedStudents, selectedClass, search, statusFilter, clearanceMap, itemsList, customByAdm]);
 
   const totalPages = Math.max(1, Math.ceil(filteredStudents.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -426,14 +541,16 @@ export default function ExamClearanceModule({ onBack, user }) {
       due += st.totalDue;
     });
     return { total: allowedStudents.length, approved, pending: allowedStudents.length - approved, due };
-  }, [allowedStudents, clearanceMap, itemsList]);
+  }, [allowedStudents, clearanceMap, itemsList, customByAdm]);
+
+  const reportClassesScope = isAdmin ? allClasses : manageableClasses;
 
   // A4 Print View
   if (printAdm) {
     const s = students.find(x => x.adm_key === printAdm);
     if (!s) { setPrintAdm(null); return null; }
     const st = getStats(s);
-    const applicable = getItemsForClass(s.class_name);
+    const applicable = getStudentAllItems(s);
     return (
       <div style={{ maxWidth: 780, margin: '0 auto', padding: 20, background: '#fff', minHeight: '100vh' }}>
         <div className="no-print" style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -461,11 +578,11 @@ export default function ExamClearanceModule({ onBack, user }) {
             </thead>
             <tbody>
               {applicable.map((it, idx) => {
-                const c = getItemRec(s.adm_key, it.name);
+                const c = getItemRec(s.adm_key, it.name, s.class_name);
                 return (
                   <tr key={it.name}>
                     <td style={{ border: '1px solid #0f172a', padding: 5, textAlign: 'center' }}>{idx + 1}</td>
-                    <td style={{ border: '1px solid #0f172a', padding: 5, fontWeight: 600 }}>{it.name}</td>
+                    <td style={{ border: '1px solid #0f172a', padding: 5, fontWeight: 600 }}>{it.name} {it.is_custom ? '(Special)' : ''}</td>
                     <td style={{ border: '1px solid #0f172a', padding: 5, textAlign: 'center' }}>{c.is_cleared ? 0 : (c.amount_due || 0)}</td>
                     <td style={{ border: '1px solid #0f172a', padding: 5, textAlign: 'center', fontWeight: 700 }}>{c.is_cleared ? '✓' : '—'}</td>
                     <td style={{ border: '1px solid #0f172a', padding: 5, fontSize: 11 }}>{c.cleared_by || ''} {c.remarks ? `(${c.remarks})` : ''}</td>
@@ -494,16 +611,18 @@ export default function ExamClearanceModule({ onBack, user }) {
           </button>
           <div>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>Exam Clearance Portal</h2>
-            <div style={{ fontSize: 11, color: '#64748b' }}>Dynamic Items & Fixed/Variable Dues • {user?.name}</div>
+            <div style={{ fontSize: 11, color: '#64748b' }}>
+              {isAdmin ? 'Admin Overall Control' : isClassTeacher ? `Class Teacher Control (${manageableClasses.join(', ')})` : 'Staff Clearance'} • {user?.name}
+            </div>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {isAdmin && (
+          {canManageItems && (
             <div style={{ display: 'flex', background: '#e2e8f0', padding: 3, borderRadius: 10, gap: 3, flexWrap: 'wrap' }}>
               {[
                 { id: 'clearance', label: 'Clearance' },
                 { id: 'items', label: `Items & Fees (${itemsList.length})` },
-                { id: 'staff', label: 'Staff Access' },
+                ...(isAdmin ? [{ id: 'staff', label: 'Staff Access' }] : []),
                 { id: 'reports', label: 'Reports' }
               ].map(t => (
                 <button
@@ -530,6 +649,23 @@ export default function ExamClearanceModule({ onBack, user }) {
         <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', color: '#065f46', padding: '8px 12px', borderRadius: 10, fontSize: 12, fontWeight: 600, marginBottom: 12, display: 'flex', justifyContent: 'space-between' }}>
           <span>{msg}</span>
           <button onClick={() => setMsg('')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 800, color: '#065f46' }}>✕</button>
+        </div>
+      )}
+
+      {/* PER-STUDENT SPECIAL DUE MODAL */}
+      {specialStudent && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 14 }}>
+          <form onSubmit={saveSpecialDue} style={{ background: '#fff', borderRadius: 14, padding: 18, maxWidth: 400, width: '100%', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Add Special Due for {specialStudent.name}</h3>
+            <div style={{ fontSize: 11.5, color: '#64748b' }}>{specialStudent.class_name} • {specialStudent.adm_key} (Only for this student)</div>
+            <input type="text" placeholder="Item Name (e.g. BOOK FINE, DAMAGE...)" value={specialName} onChange={e => setSpecialName(e.target.value)} required style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }} />
+            <input type="number" placeholder="Amount Due (₹)" value={specialAmt} onChange={e => setSpecialAmt(e.target.value)} required style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }} />
+            <input type="text" placeholder="Remarks (optional)" value={specialRemarks} onChange={e => setSpecialRemarks(e.target.value)} style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+              <button type="button" onClick={() => setSpecialStudent(null)} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #cbd5e1', background: '#f8fafc', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>Cancel</button>
+              <button type="submit" style={{ padding: '8px 14px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', fontWeight: 700, fontSize: 12 }}>+ Add Due</button>
+            </div>
+          </form>
         </div>
       )}
 
@@ -561,7 +697,7 @@ export default function ExamClearanceModule({ onBack, user }) {
           <div style={{ background: '#fff', padding: 24, borderRadius: 14, textAlign: 'center', color: '#64748b' }}>Student record not found.</div>
         ) : allowedStudents.map(s => {
           const st = getStats(s);
-          const applicable = getItemsForClass(s.class_name);
+          const applicable = getStudentAllItems(s);
           return (
             <div key={s.adm_key} style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -575,7 +711,7 @@ export default function ExamClearanceModule({ onBack, user }) {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
                 {applicable.map(it => {
-                  const c = getItemRec(s.adm_key, it.name);
+                  const c = getItemRec(s.adm_key, it.name, s.class_name);
                   return (
                     <div key={it.name} style={{ padding: 10, borderRadius: 10, border: `1px solid ${c.is_cleared ? '#bbf7d0' : '#fecaca'}`, background: c.is_cleared ? '#f0fdf4' : '#fef2f2', display: 'flex', justifyContent: 'space-between', fontSize: 11, fontWeight: 700 }}>
                       <span>{it.name}</span>
@@ -589,9 +725,9 @@ export default function ExamClearanceModule({ onBack, user }) {
         })
       )}
 
-      {/* ADMIN: ITEMS & FEES MANAGER */}
-      {isAdmin && activeTab === 'items' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
+      {/* ADMIN & CLASS TEACHER: ITEMS & FEES MANAGER */}
+      {canManageItems && activeTab === 'items' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(310px, 1fr))', gap: 14 }}>
           <form onSubmit={saveItemConfig} style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>{itemFormId ? 'Edit Clearance Item' : 'Add New Clearance Item'}</h3>
@@ -604,7 +740,7 @@ export default function ExamClearanceModule({ onBack, user }) {
                 type="text"
                 value={itemName}
                 onChange={e => setItemName(e.target.value)}
-                placeholder="e.g. EXAM FEE, LAB FEE, HOSTEL..."
+                placeholder="e.g. DEPOSIT, EXAM FEE, CLASS FUND..."
                 required
                 style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}
               />
@@ -612,17 +748,19 @@ export default function ExamClearanceModule({ onBack, user }) {
 
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Applicable Classes</label>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <button type="button" onClick={() => setItemIsCommon(true)} style={{ flex: 1, padding: 8, borderRadius: 8, border: `1px solid ${itemIsCommon ? '#2563eb' : '#cbd5e1'}`, background: itemIsCommon ? '#eff6ff' : '#fff', color: itemIsCommon ? '#1d4ed8' : '#475569', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                  Common (All Classes)
-                </button>
-                <button type="button" onClick={() => setItemIsCommon(false)} style={{ flex: 1, padding: 8, borderRadius: 8, border: `1px solid ${!itemIsCommon ? '#2563eb' : '#cbd5e1'}`, background: !itemIsCommon ? '#eff6ff' : '#fff', color: !itemIsCommon ? '#1d4ed8' : '#475569', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                  Specific Classes
-                </button>
-              </div>
-              {!itemIsCommon && (
+              {isAdmin && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <button type="button" onClick={() => setItemIsCommon(true)} style={{ flex: 1, padding: 8, borderRadius: 8, border: `1px solid ${itemIsCommon ? '#2563eb' : '#cbd5e1'}`, background: itemIsCommon ? '#eff6ff' : '#fff', color: itemIsCommon ? '#1d4ed8' : '#475569', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                    Common (All Classes)
+                  </button>
+                  <button type="button" onClick={() => setItemIsCommon(false)} style={{ flex: 1, padding: 8, borderRadius: 8, border: `1px solid ${!itemIsCommon ? '#2563eb' : '#cbd5e1'}`, background: !itemIsCommon ? '#eff6ff' : '#fff', color: !itemIsCommon ? '#1d4ed8' : '#475569', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+                    Specific Classes
+                  </button>
+                </div>
+              )}
+              {(!itemIsCommon || !isAdmin) && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 12, background: '#f8fafc', padding: 8, borderRadius: 8, border: '1px solid #e2e8f0' }}>
-                  {allClasses.map(cls => (
+                  {manageableClasses.map(cls => (
                     <label key={cls} style={{ display: 'flex', alignItems: 'center', gap: 4, background: '#fff', border: '1px solid #cbd5e1', padding: '4px 8px', borderRadius: 6, cursor: 'pointer' }}>
                       <input type="checkbox" checked={itemClasses.includes(cls)} onChange={e => setItemClasses(prev => e.target.checked ? [...prev, cls] : prev.filter(x => x !== cls))} />
                       <span>{cls}</span>
@@ -634,23 +772,44 @@ export default function ExamClearanceModule({ onBack, user }) {
 
             <div>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Amount Type</label>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <button type="button" onClick={() => setItemAmtType('variable')} style={{ flex: 1, padding: 8, borderRadius: 8, border: `1px solid ${itemAmtType === 'variable' ? '#2563eb' : '#cbd5e1'}`, background: itemAmtType === 'variable' ? '#eff6ff' : '#fff', color: itemAmtType === 'variable' ? '#1d4ed8' : '#475569', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                  Separate (Per Student)
-                </button>
-                <button type="button" onClick={() => setItemAmtType('fixed')} style={{ flex: 1, padding: 8, borderRadius: 8, border: `1px solid ${itemAmtType === 'fixed' ? '#2563eb' : '#cbd5e1'}`, background: itemAmtType === 'fixed' ? '#eff6ff' : '#fff', color: itemAmtType === 'fixed' ? '#1d4ed8' : '#475569', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-                  Fixed Amount (₹)
-                </button>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 8 }}>
+                {[
+                  { id: 'variable', label: 'Separate' },
+                  { id: 'fixed', label: 'Same Fixed ₹' },
+                  { id: 'class_wise', label: 'Class-wise ₹' }
+                ].map(opt => (
+                  <button key={opt.id} type="button" onClick={() => setItemAmtType(opt.id)} style={{ padding: 7, borderRadius: 8, border: `1px solid ${itemAmtType === opt.id ? '#2563eb' : '#cbd5e1'}`, background: itemAmtType === opt.id ? '#eff6ff' : '#fff', color: itemAmtType === opt.id ? '#1d4ed8' : '#475569', fontWeight: 700, fontSize: 11.5, cursor: 'pointer' }}>
+                    {opt.label}
+                  </button>
+                ))}
               </div>
+
               {itemAmtType === 'fixed' && (
                 <input
                   type="number"
                   value={itemFixedAmt}
                   onChange={e => setItemFixedAmt(e.target.value)}
-                  placeholder="Enter Fixed Amount in ₹ (e.g. 250)"
+                  placeholder="Fixed Amount in ₹ (e.g. 2300)"
                   required
                   style={{ width: '100%', boxSizing: 'border-box', padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}
                 />
+              )}
+
+              {itemAmtType === 'class_wise' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, background: '#f8fafc', padding: 8, borderRadius: 8, border: '1px solid #e2e8f0' }}>
+                  {(itemIsCommon && isAdmin ? allClasses : itemClasses).map(cls => (
+                    <div key={cls} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 800, width: 34 }}>{cls}</span>
+                      <input
+                        type="number"
+                        placeholder="₹"
+                        value={itemClassAmounts[cls] || ''}
+                        onChange={e => setItemClassAmounts(prev => ({ ...prev, [cls]: e.target.value }))}
+                        style={{ flex: 1, width: '100%', padding: '5px 7px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 12 }}
+                      />
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
 
@@ -661,30 +820,39 @@ export default function ExamClearanceModule({ onBack, user }) {
 
           <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Active Clearance Items ({itemsList.length})</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 460, overflowY: 'auto' }}>
-              {itemsList.map(it => (
-                <div key={it.id} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
-                  <div>
-                    <div style={{ fontWeight: 800, fontSize: 13, color: '#0f172a' }}>{it.name}</div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: it.is_common ? '#eff6ff' : '#fef3c7', color: it.is_common ? '#1d4ed8' : '#b45309' }}>
-                        {it.is_common ? 'Common (All)' : `Classes: ${(it.target_classes || []).join(', ')}`}
-                      </span>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: it.amount_type === 'fixed' ? '#dcfce7' : '#f1f5f9', color: it.amount_type === 'fixed' ? '#15803d' : '#475569' }}>
-                        {it.amount_type === 'fixed' ? `Fixed: ₹${it.fixed_amount}` : 'Separate Amount'}
-                      </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, maxHeight: 480, overflowY: 'auto' }}>
+              {itemsList.filter(it => isAdmin || it.is_common || (it.target_classes || []).some(c => manageableClasses.includes(c))).map(it => {
+                const canEditThis = isAdmin || (!it.is_common && (it.target_classes || []).every(c => manageableClasses.includes(c)));
+                return (
+                  <div key={it.id} style={{ border: '1px solid #e2e8f0', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 13, color: '#0f172a' }}>{it.name}</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: it.is_common ? '#eff6ff' : '#fef3c7', color: it.is_common ? '#1d4ed8' : '#b45309' }}>
+                          {it.is_common ? 'Common (All)' : `Classes: ${(it.target_classes || []).join(', ')}`}
+                        </span>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: it.amount_type !== 'variable' ? '#dcfce7' : '#f1f5f9', color: it.amount_type !== 'variable' ? '#15803d' : '#475569' }}>
+                          {it.amount_type === 'fixed'
+                            ? `Fixed: ₹${it.fixed_amount}`
+                            : it.amount_type === 'class_wise'
+                              ? Object.entries(it.class_amounts || {}).map(([c, v]) => `${c}:₹${v}`).join(' • ') || 'Class-wise'
+                              : 'Separate Amount'}
+                        </span>
+                      </div>
                     </div>
+                    {canEditThis && (
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => startEditItem(it)} style={{ padding: 6, borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', color: '#2563eb' }} title="Edit">
+                          <Edit2 size={13} />
+                        </button>
+                        <button onClick={() => deleteItemConfig(it)} style={{ padding: 6, borderRadius: 7, border: '1px solid #fecaca', background: '#fef2f2', cursor: 'pointer', color: '#dc2626' }} title="Remove">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <button onClick={() => startEditItem(it)} style={{ padding: 6, borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', cursor: 'pointer', color: '#2563eb' }} title="Edit">
-                      <Edit2 size={13} />
-                    </button>
-                    <button onClick={() => deleteItemConfig(it)} style={{ padding: 6, borderRadius: 7, border: '1px solid #fecaca', background: '#fef2f2', cursor: 'pointer', color: '#dc2626' }} title="Remove">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -739,8 +907,8 @@ export default function ExamClearanceModule({ onBack, user }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {pageStudents.map(s => {
                 const st = getStats(s);
-                const applicableForStudent = getItemsForClass(s.class_name).filter(it => visibleItemNames.includes(it.name));
-                const allVisCleared = applicableForStudent.length > 0 && applicableForStudent.every(it => getItemRec(s.adm_key, it.name).is_cleared);
+                const applicableForStudent = getStudentAllItems(s).filter(it => it.is_custom || visibleItemNames.includes(it.name));
+                const allVisCleared = applicableForStudent.length > 0 && applicableForStudent.every(it => getItemRec(s.adm_key, it.name, s.class_name).is_cleared);
                 return (
                   <div key={s.adm_key} style={{ background: st.isApproved ? '#f0fdf4' : '#fff', border: `1px solid ${st.isApproved ? '#86efac' : '#e2e8f0'}`, borderRadius: 14, padding: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', paddingBottom: 8, marginBottom: 8, borderBottom: '1px solid #f1f5f9' }}>
@@ -750,6 +918,11 @@ export default function ExamClearanceModule({ onBack, user }) {
                         <span style={{ fontSize: 11, background: '#eff6ff', color: '#1d4ed8', padding: '2px 7px', borderRadius: 6, fontWeight: 700 }}>{s.class_name}</span>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                        {canManageItems && (
+                          <button onClick={() => setSpecialStudent(s)} style={{ padding: '4px 9px', borderRadius: 7, border: '1px solid #bfdbfe', background: '#eff6ff', color: '#1d4ed8', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+                            + Special Due
+                          </button>
+                        )}
                         {applicableForStudent.length > 1 && (
                           <button
                             onClick={() => toggleAllForStudent(s, applicableForStudent)}
@@ -762,26 +935,33 @@ export default function ExamClearanceModule({ onBack, user }) {
                         <span style={{ fontSize: 10.5, fontWeight: 800, padding: '3px 8px', borderRadius: 99, background: st.isApproved ? '#dcfce7' : '#fef3c7', color: st.isApproved ? '#15803d' : '#b45309' }}>
                           {st.isApproved ? '✓ APPROVED' : '⏳ PENDING'}
                         </span>
-                        {isAdmin && (
+                        {canManageItems && (
                           <button onClick={() => setPrintAdm(s.adm_key)} style={{ padding: '4px 8px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>🖨️ Print</button>
                         )}
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 7 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(145px, 1fr))', gap: 7 }}>
                       {applicableForStudent.map(it => {
-                        const c = getItemRec(s.adm_key, it.name);
+                        const c = getItemRec(s.adm_key, it.name, s.class_name);
+                        const defDue = getDefaultDueFor(it.name, s.class_name);
                         return (
-                          <div key={it.name} style={{ border: `1px solid ${c.is_cleared ? '#bbf7d0' : '#e2e8f0'}`, background: c.is_cleared ? '#f0fdf4' : '#f8fafc', borderRadius: 9, padding: 7, display: 'flex', flexDirection: 'column', gap: 5 }}>
-                            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: '#0f172a' }}>
-                              <input type="checkbox" checked={Boolean(c.is_cleared)} onChange={() => toggleItem(s, it.name)} style={{ marginTop: 1, accentColor: '#16a34a' }} />
-                              <span style={{ lineHeight: 1.2 }}>
-                                {it.name}
-                                {it.amount_type === 'fixed' && !c.is_cleared && (
-                                  <span style={{ display: 'block', fontSize: 9.5, color: '#dc2626', fontWeight: 800 }}>Fixed: ₹{it.fixed_amount}</span>
-                                )}
-                              </span>
-                            </label>
+                          <div key={it.name} style={{ border: `1px solid ${c.is_cleared ? '#bbf7d0' : it.is_custom ? '#fca5a5' : '#e2e8f0'}`, background: c.is_cleared ? '#f0fdf4' : it.is_custom ? '#fff1f2' : '#f8fafc', borderRadius: 9, padding: 7, display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
+                              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 6, cursor: 'pointer', fontSize: 11, fontWeight: 700, color: '#0f172a' }}>
+                                <input type="checkbox" checked={Boolean(c.is_cleared)} onChange={() => toggleItem(s, it.name)} style={{ marginTop: 1, accentColor: '#16a34a' }} />
+                                <span style={{ lineHeight: 1.2 }}>
+                                  {it.name}
+                                  {defDue > 0 && !c.is_cleared && (
+                                    <span style={{ display: 'block', fontSize: 9.5, color: '#dc2626', fontWeight: 800 }}>Fixed: ₹{defDue}</span>
+                                  )}
+                                  {it.is_custom && <span style={{ display: 'block', fontSize: 9, color: '#be123c' }}>Special Due</span>}
+                                </span>
+                              </label>
+                              {it.is_custom && canManageItems && (
+                                <button onClick={() => deleteSpecialDue(s, it.name)} style={{ background: 'none', border: 'none', color: '#dc2626', cursor: 'pointer', padding: 0, fontSize: 11, fontWeight: 800 }} title="Remove">✕</button>
+                              )}
+                            </div>
                             {c.is_cleared ? (
                               <div style={{ fontSize: 10, color: '#15803d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>✓ {c.cleared_by || 'Cleared'}</div>
                             ) : (
@@ -825,8 +1005,8 @@ export default function ExamClearanceModule({ onBack, user }) {
         </>
       )}
 
-      {/* ADMIN REPORTS TAB */}
-      {isAdmin && activeTab === 'reports' && (
+      {/* ADMIN & CLASS TEACHER REPORTS TAB */}
+      {canManageItems && activeTab === 'reports' && (
         <div style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid #f1f5f9' }}>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -848,8 +1028,8 @@ export default function ExamClearanceModule({ onBack, user }) {
             <div style={{ display: 'flex', gap: 6 }}>
               {reportTab !== 'class_summary' && (
                 <select value={reportClass} onChange={e => setReportClass(e.target.value)} style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 12 }}>
-                  <option value="ALL">All Classes</option>
-                  {allClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                  <option value="ALL">All Allowed Classes</option>
+                  {reportClassesScope.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               )}
               <button onClick={() => window.print()} style={{ padding: '6px 11px', borderRadius: 8, border: 'none', background: '#2563eb', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>🖨️ Print</button>
@@ -870,8 +1050,8 @@ export default function ExamClearanceModule({ onBack, user }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {allClasses.map(cls => {
-                    const list = students.filter(s => s.class_name === cls);
+                  {reportClassesScope.map(cls => {
+                    const list = allowedStudents.filter(s => s.class_name === cls);
                     const app = list.filter(s => getStats(s).isApproved).length;
                     const due = list.reduce((sum, s) => sum + getStats(s).totalDue, 0);
                     return (
@@ -906,13 +1086,14 @@ export default function ExamClearanceModule({ onBack, user }) {
                 </thead>
                 <tbody>
                   {itemsList.map(it => {
-                    const scoped = students.filter(s =>
+                    const scoped = allowedStudents.filter(s =>
                       (reportClass === 'ALL' || s.class_name === reportClass) &&
                       (it.is_common || (it.target_classes || []).includes(s.class_name))
                     );
+                    if (scoped.length === 0) return null;
                     let clr = 0, due = 0;
                     scoped.forEach(s => {
-                      const c = getItemRec(s.adm_key, it.name);
+                      const c = getItemRec(s.adm_key, it.name, s.class_name);
                       if (c.is_cleared) clr++;
                       else due += Number(c.amount_due) || 0;
                     });
@@ -932,7 +1113,7 @@ export default function ExamClearanceModule({ onBack, user }) {
           )}
 
           {reportTab === 'approved_list' && (() => {
-            const list = students.filter(s => (reportClass === 'ALL' || s.class_name === reportClass) && getStats(s).isApproved);
+            const list = allowedStudents.filter(s => (reportClass === 'ALL' || s.class_name === reportClass) && getStats(s).isApproved);
             return (
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -962,7 +1143,7 @@ export default function ExamClearanceModule({ onBack, user }) {
           })()}
 
           {reportTab === 'dues_report' && (() => {
-            const list = students.filter(s => (reportClass === 'ALL' || s.class_name === reportClass) && getStats(s).totalDue > 0)
+            const list = allowedStudents.filter(s => (reportClass === 'ALL' || s.class_name === reportClass) && getStats(s).totalDue > 0)
               .sort((a, b) => getStats(b).totalDue - getStats(a).totalDue);
             return (
               <div style={{ overflowX: 'auto' }}>
@@ -986,7 +1167,7 @@ export default function ExamClearanceModule({ onBack, user }) {
                         <td style={{ border: '1px solid #e2e8f0', padding: 8, fontWeight: 700 }}>{s.name}</td>
                         <td style={{ border: '1px solid #e2e8f0', padding: 8, textAlign: 'center' }}>{s.class_name}</td>
                         <td style={{ border: '1px solid #e2e8f0', padding: 8, fontSize: 11 }}>
-                          {getItemsForClass(s.class_name).filter(it => !getItemRec(s.adm_key, it.name).is_cleared && Number(getItemRec(s.adm_key, it.name).amount_due) > 0).map(it => `${it.name}: ₹${getItemRec(s.adm_key, it.name).amount_due}`).join(' | ')}
+                          {getStudentAllItems(s).filter(it => !getItemRec(s.adm_key, it.name, s.class_name).is_cleared && Number(getItemRec(s.adm_key, it.name, s.class_name).amount_due) > 0).map(it => `${it.name}: ₹${getItemRec(s.adm_key, it.name, s.class_name).amount_due}`).join(' | ')}
                         </td>
                         <td style={{ border: '1px solid #e2e8f0', padding: 8, textAlign: 'right', color: '#dc2626', fontWeight: 800 }}>₹{getStats(s).totalDue}</td>
                       </tr>
@@ -1003,7 +1184,7 @@ export default function ExamClearanceModule({ onBack, user }) {
       {isAdmin && activeTab === 'staff' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 14 }}>
           <form onSubmit={saveStaffPerm} style={{ background: '#fff', padding: 16, borderRadius: 14, border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Assign Clearance Items to Staff</h3>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 800 }}>Assign Clearance Access to Staff</h3>
             <select value={editStaffId} onChange={e => selectStaffToEdit(e.target.value)} required style={{ padding: 9, borderRadius: 8, border: '1px solid #cbd5e1', fontSize: 13 }}>
               <option value="">-- Select Staff Member --</option>
               {staffList.map(st => <option key={st.staff_id} value={st.staff_id}>{st.name}</option>)}
@@ -1026,7 +1207,7 @@ export default function ExamClearanceModule({ onBack, user }) {
 
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12, fontWeight: 700 }}>
-                <span>Classes (Leave empty for ALL)</span>
+                <span>Assign Classes (Class Teacher gets full control for selected classes)</span>
                 <button type="button" onClick={() => setEditClasses(editClasses.length === allClasses.length ? [] : [...allClasses])} style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>Select / Clear All</button>
               </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 12 }}>
