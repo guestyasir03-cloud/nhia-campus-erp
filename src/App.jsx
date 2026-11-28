@@ -32,23 +32,23 @@ const ICON_MAP = {
 const DEFAULT_ROLES = ['admin', 'coordinator', 'teacher', 'student'];
 
 const DEFAULT_MODULES = [
-  { id: 'feedback', name: 'Feedback', icon: 'Star', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'examinations', name: 'Examinations', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'exam_clearance', name: 'Exam Clearance', icon: 'FileText', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'attendance', name: 'Attendance', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'leave', name: 'Leave Portal', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-    { id: 'gadgets', name: 'Gadget Registry', icon: 'Calendar', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'students', name: 'Students', icon: 'Users', visible_roles: ['admin', 'coordinator', 'teacher'], is_active: true },
-  { id: 'finance', name: 'Finance', icon: 'Wallet', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'activity', name: 'Activity Points', icon: 'Star', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'syllabus', name: 'Syllabus', icon: 'BookOpen', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'appraisal', name: 'Staff Appraisal', icon: 'Award', visible_roles: ['admin', 'coordinator', 'teacher'], is_active: true },
-  { id: 'staff', name: 'Staff', icon: 'Briefcase', visible_roles: ['admin', 'coordinator'], is_active: true },
-  { id: 'announcements', name: 'Announcements', icon: 'Bell', visible_roles: ['admin', 'coordinator', 'teacher', 'student'], is_active: true },
-  { id: 'reports', name: 'Reports', icon: 'BarChart3', visible_roles: ['admin', 'coordinator'], is_active: true },
-  { id: 'settings', name: 'Settings', icon: 'Sliders', visible_roles: ['admin'], is_active: true },
-  { id: 'library', name: 'Library', icon: 'Library', visible_roles: ['admin', 'teacher', 'student'], is_active: false },
-  { id: 'hostel', name: 'Hostel', icon: 'Building', visible_roles: ['admin', 'teacher', 'student'], is_active: false },
+  { id: 'feedback', name: 'Feedback', icon: 'Star', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'examinations', name: 'Examinations', icon: 'FileText', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'exam_clearance', name: 'Exam Clearance', icon: 'FileText', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'attendance', name: 'Attendance', icon: 'Calendar', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'leave', name: 'Leave Portal', icon: 'Calendar', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+    { id: 'gadgets', name: 'Gadget Registry', icon: 'Calendar', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'students', name: 'Students', icon: 'Users', visible_roles: ['admin', 'principal', 'coordinator', 'teacher'], is_active: true },
+  { id: 'finance', name: 'Finance', icon: 'Wallet', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'activity', name: 'Activity Points', icon: 'Star', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'syllabus', name: 'Syllabus', icon: 'BookOpen', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'appraisal', name: 'Staff Appraisal', icon: 'Award', visible_roles: ['admin', 'principal', 'coordinator', 'teacher'], is_active: true },
+  { id: 'staff', name: 'Staff', icon: 'Briefcase', visible_roles: ['admin', 'principal', 'coordinator'], is_active: true },
+  { id: 'announcements', name: 'Announcements', icon: 'Bell', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
+  { id: 'reports', name: 'Reports', icon: 'BarChart3', visible_roles: ['admin', 'principal', 'coordinator'], is_active: true },
+  { id: 'settings', name: 'Settings', icon: 'Sliders', visible_roles: ['admin', 'principal'], is_active: true },
+  { id: 'library', name: 'Library', icon: 'Library', visible_roles: ['admin', 'principal', 'teacher', 'student'], is_active: false },
+  { id: 'hostel', name: 'Hostel', icon: 'Building', visible_roles: ['admin', 'principal', 'teacher', 'student'], is_active: false },
 ];
 
 const SUB_MENUS = {
@@ -353,7 +353,7 @@ export default function App() {
       id,
       name: newModName.trim(),
       icon: 'Sliders',
-      visible_roles: ['admin', 'teacher', 'student'],
+      visible_roles: ['admin', 'principal', 'teacher', 'student'],
       is_active: true,
       sort_order: modules.length + 1
     };
@@ -461,7 +461,7 @@ export default function App() {
     );
   }
 
-  const currentRole = user.role === 'admin' ? rolePreview : user.role;
+  const currentRole = ['admin', 'principal'].includes(String(user.role || '').toLowerCase()) ? rolePreview : user.role;
   const visibleModules = modules.filter(m => m.is_active && (m.visible_roles || []).includes(currentRole));
 
   return (
@@ -470,17 +470,17 @@ export default function App() {
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', background: '#f4f6fc', position: 'sticky', top: 0, zIndex: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div
-            onClick={() => user.role === 'admin' && logoInputRef.current?.click()}
-            title={user.role === 'admin' ? 'Click to change Academy Logo' : 'Noorul Hidaya'}
+            onClick={() => ['admin', 'principal'].includes(String(user.role || '').toLowerCase()) && logoInputRef.current?.click()}
+            title={['admin', 'principal'].includes(String(user.role || '').toLowerCase()) ? 'Click to change Academy Logo' : 'Noorul Hidaya'}
             style={{
               width: 38, height: 38, borderRadius: 10, background: '#2e44d2', color: '#fff',
               display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14,
-              overflow: 'hidden', cursor: user.role === 'admin' ? 'pointer' : 'default', flexShrink: 0
+              overflow: 'hidden', cursor: ['admin', 'principal'].includes(String(user.role || '').toLowerCase()) ? 'pointer' : 'default', flexShrink: 0
             }}
           >
             {academyLogo ? <img src={academyLogo} alt="NH" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'NH'}
           </div>
-          {user.role === 'admin' && (
+          {['admin', 'principal'].includes(String(user.role || '').toLowerCase()) && (
             <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
           )}
           <div>
@@ -489,7 +489,7 @@ export default function App() {
           </div>
         </div>
 
-        {user.role === 'admin' ? (
+        {['admin', 'principal'].includes(String(user.role || '').toLowerCase()) ? (
           <select
             value={rolePreview}
             onChange={e => { setRolePreview(e.target.value); setActiveModule(null); }}
