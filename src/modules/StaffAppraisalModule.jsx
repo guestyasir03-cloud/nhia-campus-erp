@@ -141,6 +141,7 @@ export default function StaffAppraisalModule({ onBack, user }) {
   const [bonusRows, setBonusRows] = useState([]);
   const [appraisals, setAppraisals] = useState([]);
   const [subAssignments, setSubAssignments] = useState([]);
+  const [photoMap, setPhotoMap] = useState({});
 
   // Leaderboard modal
   const [breakdownStaff, setBreakdownStaff] = useState(null);
@@ -168,22 +169,47 @@ export default function StaffAppraisalModule({ onBack, user }) {
 
   const loadAll = useCallback(async () => {
     setLoading(true);
-    const [stRes, wkRes, bpRes, apRes, saRes] = await Promise.all([
-      supabase.from('staff').select('staff_id, name, department, designation, role').order('name').limit(500),
+    const [stRes, wkRes, bpRes, apRes, saRes, phRes] = await Promise.all([
+      supabase.from('staff').select('*').order('name').limit(500),
       supabase.from('appraisal_work_items').select('*').eq('cycle', CYCLE).order('due_date', { ascending: false }).limit(5000),
       supabase.from('appraisal_bonus_points').select('*').eq('cycle', CYCLE).order('created_at', { ascending: false }).limit(2000),
       supabase.from('staff_appraisals_v2').select('*, staff_appraisal_ratings(*)').eq('cycle', CYCLE).limit(500),
-      supabase.from('subject_assignments').select('*').limit(1000)
+      supabase.from('subject_assignments').select('*').limit(1000),
+      supabase.from('appraisal_staff_photos').select('staff_id, avatar_url').limit(500)
     ]);
     setStaffList((stRes.data || []).map(s => ({ ...s, id: String(s.staff_id).trim() })));
     setWorkItems(wkRes.data || []);
     setBonusRows(bpRes.data || []);
     setAppraisals(apRes.data || []);
     setSubAssignments(saRes.data || []);
+    const pm = {}; (phRes?.data || []).forEach(p => { pm[String(p.staff_id).trim()] = p.avatar_url; }); setPhotoMap(pm);
     setLoading(false);
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  
+  async function handleStaffPhotoUpload(staffId, file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const img = new Image();
+      img.onload = async () => {
+        const canvas = document.createElement('canvas');
+        const size = 160;
+        canvas.width = size; canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        const min = Math.min(img.width, img.height);
+        ctx.drawImage(img, (img.width - min) / 2, (img.height - min) / 2, min, min, 0, 0, size, size);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        const { error } = await supabase.from('appraisal_staff_photos').upsert({ staff_id: String(staffId), avatar_url: dataUrl, updated_at: new Date().toISOString() });
+        if (error) setMsg('Photo error: ' + error.message);
+        else { setPhotoMap(p => ({ ...p, [String(staffId)]: dataUrl })); setMsg('Staff photo updated!'); }
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
 
   const staffMap = useMemo(() => Object.fromEntries(staffList.map(s => [s.id, s])), [staffList]);
 
@@ -537,6 +563,16 @@ export default function StaffAppraisalModule({ onBack, user }) {
                       return (
                         <div key={p.id} onClick={() => setBreakdownStaff(p)} style={{ background: '#fff', border: `2px solid ${borders[idx]}`, borderRadius: 16, padding: 18, width: 220, textAlign: 'center', cursor: 'pointer', boxShadow: '0 6px 16px rgba(0,0,0,0.06)' }}>
                           <div style={{ fontSize: 12, fontWeight: 800, color: borders[idx], marginBottom: 8 }}>{medals[idx]}</div>
+                          <div style={{ position: 'relative', width: 72, height: 72, margin: '0 auto 10px' }}>
+                            <div style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 24, color: '#475569', border: '3px solid ' + borders[idx] }}>
+                              {photoMap[p.id] ? <img src={photoMap[p.id]} alt={p.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : p.name.charAt(0)}
+                            </div>
+                            {canManage && (
+                              <label onClick={e => e.stopPropagation()} title="Upload Photo" style={{ position: 'absolute', bottom: -2, right: -2, background: '#2563eb', color: '#fff', borderRadius: '50%', width: 24, height: 24, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 12 }}>
+                                📷<input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleStaffPhotoUpload(p.id, e.target.files[0])} />
+                              </label>
+                            )}
+                          </div>
                           <div style={{ fontWeight: 800, fontSize: 15, color: '#0f172a' }}>{p.name}</div>
                           <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>{p.department || 'Faculty'}</div>
                           <div style={{ fontSize: 28, fontWeight: 800, color: '#2563eb' }}>{p.score.toFixed(1)}<span style={{ fontSize: 12, color: '#94a3b8' }}>/100</span></div>
@@ -550,10 +586,21 @@ export default function StaffAppraisalModule({ onBack, user }) {
                 <div style={{ background: '#fff', padding: 14, borderRadius: 14, border: '1px solid #e2e8f0', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 10 }}>
                   {rest.map(r => (
                     <div key={r.id} onClick={() => setBreakdownStaff(r)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 12, borderRadius: 10, border: r.id === myStaffId ? '2px solid #2563eb' : '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer' }}>
-                      <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ position: 'relative', width: 42, height: 42, flexShrink: 0 }}>
+                          <div style={{ width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', background: '#cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: '#475569' }}>
+                            {photoMap[r.id] ? <img src={photoMap[r.id]} alt={r.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : r.name.charAt(0)}
+                          </div>
+                          {canManage && (
+                            <label onClick={e => e.stopPropagation()} title="Upload Photo" style={{ position: 'absolute', bottom: -3, right: -3, background: '#2563eb', color: '#fff', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 9 }}>
+                              📷<input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleStaffPhotoUpload(r.id, e.target.files[0])} />
+                            </label>
+                          )}
+                        </div>
+                        <div>
                         <div style={{ fontWeight: 700, fontSize: 13 }}>{r.name}</div>
                         <div style={{ fontSize: 11, color: '#64748b' }}>Rank #{r.rank} • {r.department || 'Faculty'}</div>
-                      </div>
+                      </div></div>
                       <div style={{ fontWeight: 800, fontSize: 17, color: '#2563eb' }}>{r.score.toFixed(1)}</div>
                     </div>
                   ))}
