@@ -206,7 +206,7 @@ export default function App() {
         if (s.key === 'portal_roles' && s.value) {
           try {
             const parsed = JSON.parse(s.value);
-            if (Array.isArray(parsed) && parsed.length > 0) setRoles(parsed);
+            if (Array.isArray(parsed) && parsed.length > 0) setRoles(parsed.includes('principal') ? parsed : ['admin', 'principal', ...parsed.filter(r => r !== 'admin')]);
           } catch {}
         }
       });
@@ -461,8 +461,8 @@ export default function App() {
     );
   }
 
-  const currentRole = ['admin', 'principal'].includes(String(user.role || '').toLowerCase()) ? rolePreview : user.role;
-  const visibleModules = modules.filter(m => m.is_active && (m.visible_roles || []).some(r => String(r).toLowerCase() === String(currentRole || '').toLowerCase() || (String(currentRole || '').toLowerCase() === 'principal' && String(r).toLowerCase() === 'admin')));
+  const currentRole = String(user.role || '').toLowerCase() === 'admin' ? rolePreview : user.role;
+  const visibleModules = modules.filter(m => m.is_active && (m.visible_roles || []).some(r => String(r).toLowerCase() === String(currentRole || '').toLowerCase() ));
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 80, maxWidth: 520, margin: '0 auto', background: '#f4f6fc' }}>
@@ -470,17 +470,17 @@ export default function App() {
       <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 18px', background: '#f4f6fc', position: 'sticky', top: 0, zIndex: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div
-            onClick={() => ['admin', 'principal'].includes(String(user.role || '').toLowerCase()) && logoInputRef.current?.click()}
-            title={['admin', 'principal'].includes(String(user.role || '').toLowerCase()) ? 'Click to change Academy Logo' : 'Noorul Hidaya'}
+            onClick={() => String(user.role || '').toLowerCase() === 'admin' && logoInputRef.current?.click()}
+            title={String(user.role || '').toLowerCase() === 'admin' ? 'Click to change Academy Logo' : 'Noorul Hidaya'}
             style={{
               width: 38, height: 38, borderRadius: 10, background: '#2e44d2', color: '#fff',
               display: 'grid', placeItems: 'center', fontWeight: 800, fontSize: 14,
-              overflow: 'hidden', cursor: ['admin', 'principal'].includes(String(user.role || '').toLowerCase()) ? 'pointer' : 'default', flexShrink: 0
+              overflow: 'hidden', cursor: String(user.role || '').toLowerCase() === 'admin' ? 'pointer' : 'default', flexShrink: 0
             }}
           >
             {academyLogo ? <img src={academyLogo} alt="NH" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : 'NH'}
           </div>
-          {['admin', 'principal'].includes(String(user.role || '').toLowerCase()) && (
+          {String(user.role || '').toLowerCase() === 'admin' && (
             <input ref={logoInputRef} type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
           )}
           <div>
@@ -489,7 +489,7 @@ export default function App() {
           </div>
         </div>
 
-        {['admin', 'principal'].includes(String(user.role || '').toLowerCase()) ? (
+        {String(user.role || '').toLowerCase() === 'admin' ? (
           <select
             value={rolePreview}
             onChange={e => { setRolePreview(e.target.value); setActiveModule(null); }}
