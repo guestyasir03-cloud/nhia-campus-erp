@@ -481,7 +481,8 @@ export default function StaffModule({ onBack }) {
           <select value={newRole} onChange={e => setNewRole(e.target.value)} style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1', background: '#fff' }}>
             <option value="teacher">Teacher</option>
             <option value="coordinator">Coordinator</option>
-            <option value="admin">Admin</option>
+            <option value="Principal">Principal</option>
+              <option value="admin">Admin</option>
           </select>
           <input value={newPin} onChange={e => setNewPin(e.target.value)} placeholder="Login PIN (Default: 1234)" style={{ padding: 11, borderRadius: 10, border: '1px solid #cbd5e1' }} />
           <button type="submit" disabled={loading} style={{ padding: 13, borderRadius: 10, border: 'none', background: '#16a34a', color: '#fff', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
