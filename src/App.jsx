@@ -29,7 +29,7 @@ const ICON_MAP = {
   Briefcase, Bell, BarChart3, Sliders, Library, Building
 };
 
-const DEFAULT_ROLES = ['admin', 'coordinator', 'teacher', 'student'];
+const DEFAULT_ROLES = ['admin', 'principal', 'coordinator', 'teacher', 'student'];
 
 const DEFAULT_MODULES = [
   { id: 'feedback', name: 'Feedback', icon: 'Star', visible_roles: ['admin', 'principal', 'coordinator', 'teacher', 'student'], is_active: true },
