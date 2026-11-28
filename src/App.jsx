@@ -462,7 +462,7 @@ export default function App() {
   }
 
   const currentRole = ['admin', 'principal'].includes(String(user.role || '').toLowerCase()) ? rolePreview : user.role;
-  const visibleModules = modules.filter(m => m.is_active && (m.visible_roles || []).includes(currentRole));
+  const visibleModules = modules.filter(m => m.is_active && (m.visible_roles || []).some(r => String(r).toLowerCase() === String(currentRole || '').toLowerCase() || (String(currentRole || '').toLowerCase() === 'principal' && String(r).toLowerCase() === 'admin')));
 
   return (
     <div style={{ minHeight: '100vh', paddingBottom: 80, maxWidth: 520, margin: '0 auto', background: '#f4f6fc' }}>
